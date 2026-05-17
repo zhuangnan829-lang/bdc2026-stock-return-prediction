@@ -103,7 +103,7 @@ bash /app/demo/run_demo.sh
 
 因此它被冻结为正式默认方案，而不是继续使用历史参考主线 `sl10`。
 
-更完整的答辩说明见：
+更完整的方案说明见：
 
 - [opening_report_alignment.md](/d:/Desktop/股票分析预测代码/app/docs/opening_report_alignment.md)
 
@@ -240,9 +240,9 @@ bash /app/demo/run_demo.sh
 
 作用：
 
-- 答辩展示
-- 结果讲解
-- 现场演示
+- 结果可视化查看
+- 运行流程展示
+- 交互式分析入口
 
 ## 目录结构
 
@@ -251,7 +251,7 @@ app/
   code/src/                  核心源码
   data/                      输入数据
   demo/                      Streamlit Demo
-  docs/                      文档、图表索引、答辩材料
+  docs/                      文档与图表索引
   model/                     模型、对比结果、回测结果、冻结快照
   output/                    正式推理输出
   temp/                      中间特征文件
@@ -281,7 +281,7 @@ docker compose up
 
 ## 文档导航
 
-如果你在整理报告、PPT 或答辩，建议优先看这些文档：
+如果你想快速了解项目结构与结果，建议优先看这些文档：
 
 - [opening_report_alignment.md](/d:/Desktop/股票分析预测代码/app/docs/opening_report_alignment.md)
 - [reproducibility_guide.md](/d:/Desktop/股票分析预测代码/app/docs/reproducibility_guide.md)
@@ -293,7 +293,7 @@ docker compose up
 
 ## 提交前建议顺序
 
-推荐你在最终提交或答辩前按这个顺序彩排：
+推荐你在最终提交前按这个顺序检查：
 
 1. 执行 `bash /app/freeze_submission.sh`
 2. 检查 `app/output/result.csv`
