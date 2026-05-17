@@ -1,0 +1,27 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --upgrade pip && pip install -r /tmp/requirements.txt
+
+COPY app /app
+
+RUN chmod +x \
+    /app/init.sh \
+    /app/train.sh \
+    /app/test.sh \
+    /app/run_submission.sh \
+    /app/freeze_submission.sh \
+    /app/docker_rehearsal.sh \
+    /app/data/run.sh
+
+CMD ["/bin/bash", "/app/data/run.sh"]

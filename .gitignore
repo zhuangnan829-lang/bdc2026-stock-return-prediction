@@ -1,0 +1,34 @@
+# Python environments
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Editor settings
+.vscode/
+.idea/
+
+# Local docker / tooling state
+.docker-local/
+
+# Logs
+*.log
+app/demo/streamlit_stdout.log
+app/demo/streamlit_stderr.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary outputs and caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.tmp
+*.temp
+
+# Notebook checkpoints
+.ipynb_checkpoints/

@@ -1,0 +1,2 @@
+﻿retain_candidate,retain_reason,delta_case_slice_score,delta_cumulative_return_after_cost,delta_sharpe_after_cost,delta_max_drawdown_after_cost
+0,local_cumulative_not_worse / drawdown_not_materially_worse,0.022111135019221115,-0.3341373605287036,0.31914184657388267,-0.011376596847595996

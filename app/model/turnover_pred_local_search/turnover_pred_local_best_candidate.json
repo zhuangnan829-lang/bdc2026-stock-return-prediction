@@ -1,0 +1,10 @@
+{
+  "profile_name": "turnover_pred_mt76",
+  "sort_strategy": "risk_adjusted",
+  "weighting_scheme": "pred",
+  "max_turnover": 0.76,
+  "cumulative_return_after_cost": 0.12588101628035808,
+  "sharpe_after_cost": 1.4901541881217606,
+  "max_drawdown_after_cost": -0.0771300685023466,
+  "avg_turnover": 0.7600000000003301
+}

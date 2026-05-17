@@ -1,0 +1,19 @@
+{
+  "profile_name": "swt_risk_adjusted_pred_mt075",
+  "feature_set": "base_technical_risk",
+  "primary_candidate_size": 55,
+  "max_volatility_20d_pct": 0.82,
+  "max_volatility_5d_pct": 0.94,
+  "turnover_rate_lower_pct": 0.03,
+  "turnover_rate_upper_pct": 0.97,
+  "turnover_ratio_upper_pct": 0.95,
+  "risk_penalty_weight": 0.2,
+  "sort_strategy": "risk_adjusted",
+  "weighting_scheme": "pred",
+  "max_turnover": 0.75,
+  "transaction_cost": 0.001,
+  "cumulative_return_after_cost": 0.12585382439667114,
+  "sharpe_after_cost": 1.5045445025034043,
+  "max_drawdown_after_cost": -0.07605485877820617,
+  "avg_turnover": 0.7500000000003381
+}
