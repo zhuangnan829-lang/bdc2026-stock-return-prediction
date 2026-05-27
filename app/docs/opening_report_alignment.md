@@ -15,7 +15,7 @@
 |---|---|---|---|---|---|
 | LSTM | 主线深度学习模型 | 已完成 | 是 | `app/model/lstm_model.pt`、`app/model/model_meta.json`、`app/model/walk_forward_predictions.csv`、`app/model/backtest_summary.csv` | 当前正式默认方案使用 `LSTM sl20`。 |
 | LightGBM | 机器学习基线 | 已完成 | 否 | `app/model/baseline_lightgbm_same_protocol/`、`app/model/formal_model_comparison/formal_model_comparison.csv` | 已纳入统一模型对比表。 |
-| XGBoost | 树模型基线 | 已完成 | 否 | `app/model/xgboost_baseline/`、`app/model/formal_model_comparison/formal_model_comparison.csv` | 作为补充对照，当前使用旧特征集结果。 |
+| XGBoost | 树模型基线 | 已完成 | 否 | `app/model/xgboost_baseline/`、`app/model/formal_model_comparison/formal_model_comparison.csv` | 作为同特征集树模型对照，已切换到正式方案特征集。 |
 | 动量基线 | 规则基线 | 已完成 | 否 | `app/model/formal_model_comparison/formal_model_comparison.csv` | 以 `Momentum (mom_5d)` 形式进入正式对比表。 |
 | Linear Regression | 线性基线 | 已完成 | 否 | `app/model/baseline_linear_same_protocol/`、`app/model/formal_model_comparison/formal_model_comparison.csv` | 作为同特征集线性参考。 |
 | Transformer | 深度时序备选模型 | 已有实验 | 否 | `app/model/transformer_baseline/`、`app/model/model_comparison/model_comparison_summary.csv` | 有训练与回测产物，但未收敛为正式方案。 |
@@ -58,7 +58,7 @@
 | 模型 | 未进入正式候选的主要原因 |
 |---|---|
 | LightGBM | 同特征集下整体排序能力与收益转化弱于当前 LSTM 主线。 |
-| XGBoost | 当前对比结果依赖旧特征集，且整体收益与 RankIC 不占优。 |
+| XGBoost | 即使切换到正式方案同特征集，整体收益与 RankIC 仍不占优。 |
 | 动量基线 | 规则简单，NDCG/命中率不差，但收益转化与稳定性不足。 |
 | Linear Regression | 作为线性参考已完成使命，但整体表现明显弱于 LSTM。 |
 | Transformer | 已有实验，但当前结果未显示出超过 LSTM 主线的综合优势。 |

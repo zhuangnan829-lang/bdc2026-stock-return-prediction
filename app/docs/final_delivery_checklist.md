@@ -1,6 +1,6 @@
 # 最终交付清单
 
-本文档用于提交前逐项自查。我已将当前**已经核实过**的项目打勾，未实际验证的项目继续保留未勾选状态。
+本文档用于提交前逐项自查。我已将当前已经核实通过的项目打勾，尚未完成最终复核的项目继续保留未勾选状态。
 
 ## 1. 代码交付
 
@@ -10,7 +10,7 @@
 - [x] `app/run_submission.sh` 存在
 - [x] `app/freeze_submission.sh` 存在
 - [x] Windows 对应脚本存在：`*.ps1`、`*.bat`
-- [x] `requirements.txt` 已存在并记录运行依赖
+- [x] `requirements.txt` 已记录运行依赖
 - [x] `Dockerfile`、`docker-compose.yml` 存在且入口口径一致
 
 ## 2. 模型与配置交付
@@ -44,7 +44,7 @@
 - [x] `app/docs/experiment_result_index.md`
 - [x] `app/docs/report_figure_table_index.md`
 - [x] `app/docs/final_delivery_checklist.md`
-- [ ] 中期/答辩相关文档已全部做最终统一复核
+- [ ] 中期/答辩相关文档已全部完成最终统一复核
 
 ## 5. 报告图表交付
 
@@ -54,7 +54,7 @@
 - [x] `app/docs/report_supplement_assets/demo_key_commands.png`
 - [x] `app/docs/report_supplement_assets/demo_result_files.png`
 - [x] `app/docs/report_supplement_tables.md`
-- [x] `app/docs/figures/midterm/` 目录存在并包含当前图像文件
+- [x] `app/docs/figures/midterm/` 目录存在且包含当前图像文件
 
 ## 6. Demo 交付
 
@@ -68,8 +68,8 @@
 ## 7. 环境说明交付
 
 - [x] `requirements.txt` 可作为基础安装入口
-- [ ] `Dockerfile` 已实际完成一次本地构建验证
-- [ ] `docker-compose.yml` 已实际完成一次本地彩排验证
+- [x] `Dockerfile` 已实际完成一次本地构建验证
+- [x] `docker-compose.yml` 已实际完成一次本地彩排验证
 - [x] `app/docs/environment_snapshot.md` 已更新
 - [x] README 与环境文档已说明本地环境入口
 
@@ -80,6 +80,8 @@
 - [x] 已确认 volume 挂载路径与文档说明一致
 - [x] 已将 `docker build -t bdc2026 .` 写入文档
 - [x] 已在文档中补充 `docker save` 说明
+- [x] 已完成 `docker save -> docker load -> docker compose up` 的 tar 级离线彩排
+- [x] 已核对容器复现结果与仓库基准结果内容一致
 
 ## 9. PPT / 答辩材料交付
 
@@ -91,11 +93,12 @@
 
 ## 10. 提交前最后检查
 
-- [ ] 重新执行一次 `app/freeze_submission.sh`
-- [ ] 检查 `app/output/result.csv` 最新格式与权重和
-- [ ] 检查 `pre_submit_check.py` 最新结果
+- [x] 重新执行一次 `app/freeze_submission.sh`
+- [x] 检查 `app/output/result.csv` 最新格式与权重和
+- [x] 检查 `pre_submit_check.py` 最新结果
 - [ ] 再启动一次 Demo 并做最终展示彩排
 - [ ] 核对 README、报告、PPT、Demo 口径完全一致
+- [x] 已完成一次 Docker 离线回装彩排并记录结果
 
 ## 11. 推荐提交前彩排顺序
 
