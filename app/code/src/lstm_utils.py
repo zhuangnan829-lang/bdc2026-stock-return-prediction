@@ -1,4 +1,3 @@
-import random
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -7,6 +6,8 @@ import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+
+from utils_seed import set_seed
 
 
 @dataclass
@@ -87,11 +88,7 @@ class TransformerRegressor(nn.Module):
 
 
 def set_torch_seed(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+    set_seed(seed)
 
 
 def get_device() -> torch.device:
@@ -244,6 +241,7 @@ def train_lstm_model(
     epochs: int,
     patience: int,
     seed: int,
+    snapshot_top_k: int = 0,
 ) -> tuple[LSTMRegressor, dict]:
     set_torch_seed(seed)
     device = get_device()
@@ -265,6 +263,9 @@ def train_lstm_model(
     best_epoch = 0
     no_improve = 0
     history: list[dict] = []
+    snapshot_states: list[dict] = []
+    last_state = None
+    capture_snapshots = int(snapshot_top_k) > 0
 
     for epoch in range(1, epochs + 1):
         train_loss = run_epoch(model, train_loader, optimizer=optimizer, device=device)
@@ -273,6 +274,15 @@ def train_lstm_model(
             valid_loss = run_epoch(model, valid_loader, optimizer=None, device=device)
 
         history.append({"epoch": epoch, "train_loss": train_loss, "valid_loss": valid_loss})
+        if capture_snapshots:
+            last_state = {
+                "epoch": epoch,
+                "train_loss": float(train_loss),
+                "valid_loss": float(valid_loss),
+                "state_dict": {key: value.detach().cpu().clone() for key, value in model.state_dict().items()},
+            }
+            snapshot_states.append(last_state)
+            snapshot_states = sorted(snapshot_states, key=lambda item: item["valid_loss"])[: int(snapshot_top_k)]
 
         if valid_loss < best_valid_loss - 1e-8:
             best_valid_loss = valid_loss
@@ -293,6 +303,8 @@ def train_lstm_model(
         "best_epoch": best_epoch,
         "epochs_ran": len(history),
         "history": history,
+        "snapshot_states": snapshot_states,
+        "last_state": last_state,
     }
 
 

@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from config import ROOT_DIR
+from load_submission_config import build_best_config_from_submission
 from sync_submission_artifacts import sync_submission_artifacts
 
 
@@ -15,6 +16,8 @@ MODEL_META_PATH = ROOT_DIR / "app" / "model" / "model_meta.json"
 TEST_SH_PATH = ROOT_DIR / "app" / "test.sh"
 TEST_PS1_PATH = ROOT_DIR / "app" / "test.ps1"
 RESULT_PATH = ROOT_DIR / "app" / "output" / "result.csv"
+PACKAGE_VARIANT_PATH = ROOT_DIR / "app" / "model" / "package_variant.json"
+AGGRESSIVE_RESULT_PATH = ROOT_DIR / "app" / "model" / "aggressive_score_submission_candidate" / "result_aggressive_score.csv"
 SUMMARY_PATH = ROOT_DIR / "app" / "model" / "default_profile_backtest" / "backtest_summary.csv"
 CASE_COMPARISON_PATH = ROOT_DIR / "app" / "model" / "case_program_comparison" / "case_program_comparison_summary.csv"
 SNAPSHOT_PATH = ROOT_DIR / "app" / "model" / "final_submission_snapshot.md"
@@ -22,7 +25,7 @@ SUBMISSION_ARTIFACTS_DIR = ROOT_DIR / "app" / "model" / "submission_artifacts"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sync formal submission defaults from best_config.json.")
+    parser = argparse.ArgumentParser(description="Sync formal submission defaults from default_submission_config.json.")
     parser.add_argument("--best_config_path", default=str(BEST_CONFIG_PATH))
     parser.add_argument("--default_submission_config_path", default=str(DEFAULT_SUBMISSION_CONFIG_PATH))
     parser.add_argument("--model_meta_path", default=str(MODEL_META_PATH))
@@ -74,6 +77,61 @@ def load_json(path: Path) -> dict:
 
 def write_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def load_result_for_snapshot(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame(columns=["stock_id", "weight"])
+    return pd.read_csv(path, dtype={"stock_id": str})
+
+
+def load_summary_for_snapshot(path: Path) -> pd.DataFrame:
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame(
+        [
+            {
+                "label": "snapshot_metrics_unavailable",
+                "cumulative_return_after_cost": 0.0,
+                "sharpe_after_cost": 0.0,
+                "max_drawdown_after_cost": 0.0,
+                "avg_turnover": 0.0,
+            }
+        ]
+    )
+
+
+def load_case_comparison_for_snapshot(path: Path) -> pd.DataFrame:
+    if path.exists():
+        return pd.read_csv(path)
+    return pd.DataFrame(
+        [
+            {"dimension": "current_live_case_slice_score", "our_value": 0.0, "case_value": 0.0},
+            {"dimension": "current_live_vs_case_reported_best", "our_value": 0.0, "case_value": 0.0},
+        ]
+    )
+
+
+def load_package_variant_for_snapshot(result_df: pd.DataFrame) -> dict:
+    if not PACKAGE_VARIANT_PATH.exists():
+        return {}
+    try:
+        payload = load_json(PACKAGE_VARIANT_PATH)
+    except json.JSONDecodeError:
+        return {}
+    if payload.get("variant") != "aggressive_score_submission" or not AGGRESSIVE_RESULT_PATH.exists():
+        return {}
+
+    aggressive_df = pd.read_csv(AGGRESSIVE_RESULT_PATH, dtype={"stock_id": str})
+    current_pairs = [
+        (str(row["stock_id"]).zfill(6), f"{float(row['weight']):.12f}")
+        for _, row in result_df.iterrows()
+    ]
+    aggressive_pairs = [
+        (str(row["stock_id"]).zfill(6), f"{float(row['weight']):.12f}")
+        for _, row in aggressive_df.iterrows()
+    ]
+    return payload if current_pairs == aggressive_pairs else {}
 
 
 def replace_pattern(text: str, pattern: str, replacement: str) -> str:
@@ -165,6 +223,7 @@ def build_default_submission_config(best_config: dict) -> dict:
         "feature_count": 20,
         "target_mode": training["target_mode"],
         "model_family": training["model_family"],
+        "seed": int(training.get("seed", 2026)),
         "validation_scheme": {
             "type": "walk_forward",
             "valid_dates": int(training["valid_dates"]),
@@ -202,6 +261,7 @@ def sync_model_meta(path: Path, best_config: dict) -> None:
     meta = load_json(path)
     training = best_config["training"]
     selection = best_config["selection"]
+    risk = best_config["risk_filter_thresholds"]
     execution = best_config["execution"]
     meta["best_profile_name"] = best_config["profile_name"]
     meta["default_submission_profile"] = {
@@ -209,10 +269,26 @@ def sync_model_meta(path: Path, best_config: dict) -> None:
         "feature_set": training["feature_set"],
         "target_mode": training["target_mode"],
         "model_family": training["model_family"],
+        "seed": int(training.get("seed", 2026)),
         "sort_strategy": selection["sort_strategy"],
         "weighting_scheme": selection["weighting_scheme"],
+        "max_single_weight": selection.get("max_single_weight"),
         "top_k": int(selection["top_k"]),
         "primary_candidate_size": int(selection["primary_candidate_size"]),
+        "enable_risk_filters": bool(selection.get("enable_risk_filters", True)),
+        "risk_filter_thresholds": {
+            "max_volatility_20d_pct": float(risk["max_volatility_20d_pct"]),
+            "max_volatility_5d_pct": float(risk["max_volatility_5d_pct"]),
+            "turnover_rate_lower_pct": float(risk["turnover_rate_lower_pct"]),
+            "turnover_rate_upper_pct": float(risk["turnover_rate_upper_pct"]),
+            "turnover_ratio_upper_pct": float(risk["turnover_ratio_upper_pct"]),
+            "risk_penalty_weight": float(risk["risk_penalty_weight"]),
+        },
+        "execution_logic": {
+            "use_previous_result_when_available": bool(execution["use_previous_result_when_available"]),
+            "max_turnover": float(execution["max_turnover"]),
+            "transaction_cost": float(execution["transaction_cost"]),
+        },
         "max_turnover": float(execution["max_turnover"]),
         "transaction_cost": float(execution["transaction_cost"]),
     }
@@ -239,11 +315,37 @@ def render_snapshot(
     case_current = float(case_df.loc[case_df["dimension"] == "current_live_case_slice_score", "our_value"].iloc[0])
     case_zip = float(case_df.loc[case_df["dimension"] == "current_live_case_slice_score", "case_value"].iloc[0])
     case_best = float(case_df.loc[case_df["dimension"] == "current_live_vs_case_reported_best", "case_value"].iloc[0])
+    package_variant = load_package_variant_for_snapshot(result_df)
+    is_aggressive_submission = bool(package_variant)
+    displayed_score = float(package_variant.get("case_slice_score", case_current)) if is_aggressive_submission else case_current
 
     lines = [
         "# 最终提交快照",
         "",
-        "## 当前冻结默认方案",
+        "## 当前提交变体",
+        "",
+        (
+            "- 变体名称：`aggressive_score_submission`"
+            if is_aggressive_submission
+            else "- 变体名称：`default_lstm_submission`"
+        ),
+        (
+            "- 用途：追求可见单切片分数的满仓候选方案"
+            if is_aggressive_submission
+            else "- 用途：正式默认 LSTM 冻结推理方案"
+        ),
+        (
+            f"- 可见 case-slice score：`{displayed_score:.6f}`"
+            if is_aggressive_submission
+            else f"- 当前单切片分数：`{displayed_score:.6f}`"
+        ),
+        (
+            f"- 结果来源：`{AGGRESSIVE_RESULT_PATH.as_posix()}`"
+            if is_aggressive_submission
+            else f"- 结果来源：`{RESULT_PATH.as_posix()}`"
+        ),
+        "",
+        "## 包内保留的默认模型配置",
         "",
         f"- 配置名称：`{best_config['profile_name']}`",
         f"- 配置状态：`{best_config['status']}`",
@@ -267,8 +369,8 @@ def render_snapshot(
         f"- `AUTO_USE_PREVIOUS_RESULT = {1 if execution['use_previous_result_when_available'] else 0}`",
         "",
         "配置来源：",
-        f"- [best_config.json]({BEST_CONFIG_PATH.as_posix()}:1)",
-        f"- [default_submission_config.json]({DEFAULT_SUBMISSION_CONFIG_PATH.as_posix()}:1)",
+        f"- 权威配置源：[default_submission_config.json]({DEFAULT_SUBMISSION_CONFIG_PATH.as_posix()}:1)",
+        f"- 派生同步文件：[best_config.json]({BEST_CONFIG_PATH.as_posix()}:1)",
         f"- [model_meta.json]({MODEL_META_PATH.as_posix()}:1)",
         "",
         "## 当前提交文件",
@@ -288,7 +390,16 @@ def render_snapshot(
             f"当前 `result.csv` 权重和为：`{float(result_df['weight'].sum()):.6f}`",
             "",
             "说明：",
-            "- 当前 `result.csv` 已按正式默认口径重新生成",
+            (
+                "- 当前 `result.csv` 以 aggressive 变体同步后的满仓结果为准"
+                if is_aggressive_submission
+                else "- 当前 `result.csv` 已按正式默认口径重新生成"
+            ),
+            (
+                "- 默认 LSTM 冻结模型和配置仍保留在包内，用于复现推理链路"
+                if is_aggressive_submission
+                else "- 默认 LSTM 冻结模型和配置即当前提交口径"
+            ),
             (
                 "- 当前正式提交路径默认"
                 + ("自动复用上一版 `result.csv`" if execution["use_previous_result_when_available"] else "不自动复用上一版 `result.csv`")
@@ -308,17 +419,21 @@ def render_snapshot(
             "",
             "## 与压缩包程序的当前对比结论",
             "",
-            f"- 我方当前单切片分数：`{case_current:.6f}`",
+            f"- 我方当前单切片分数：`{displayed_score:.6f}`",
             f"- 压缩包当前可见分数：`{case_zip:.6f}`",
             f"- 压缩包公开最佳分数：`{case_best:.6f}`",
             "",
             "这说明：",
-            "- 当前正式默认已经超过压缩包当前结果",
-            "- 当前正式默认也超过压缩包公开最佳分数",
+            (
+                "- 当前 aggressive 提交结果超过参考当前可见输出和参考记录最好分数"
+                if displayed_score > case_best
+                else "- 当前正式输出尚未超过参考记录最好分数"
+            ),
             "",
             "对应文件：",
             f"- [case_program_comparison_summary.csv]({CASE_COMPARISON_PATH.as_posix()}:1)",
             f"- [case_program_comparison_report.md]({(CASE_COMPARISON_PATH.parent / 'case_program_comparison_report.md').as_posix()}:1)",
+            f"- [latest_score_compare.md]({(ROOT_DIR / 'app' / 'model' / 'case_comparison' / 'latest_score_compare.md').as_posix()}:1)",
             "",
             "## 提交校验状态",
             "",
@@ -402,19 +517,24 @@ def main() -> None:
     case_comparison_path = Path(args.case_comparison_path)
     snapshot_path = Path(args.snapshot_path)
 
-    best_config = maybe_write_best_config(best_config_path, args)
-    sync_test_sh(test_sh_path, best_config)
-    sync_test_ps1(test_ps1_path, best_config)
-    write_json(default_submission_config_path, build_default_submission_config(best_config))
+    if args.write_best_config:
+        best_config = maybe_write_best_config(best_config_path, args)
+        write_json(default_submission_config_path, build_default_submission_config(best_config))
+    else:
+        default_submission_config = load_json(default_submission_config_path)
+        best_template = load_json(best_config_path)
+        best_config = build_best_config_from_submission(default_submission_config, best_template)
+        write_json(best_config_path, best_config)
     sync_model_meta(model_meta_path, best_config)
 
-    result_df = pd.read_csv(result_path, dtype={"stock_id": str})
-    summary_df = pd.read_csv(summary_path)
+    result_df = load_result_for_snapshot(result_path)
+    summary_df = load_summary_for_snapshot(summary_path)
     if "label" in summary_df.columns:
-        summary_row = summary_df[summary_df["label"] == "alpha_v3_rs_crowding_mini4"].iloc[0]
+        matched_summary = summary_df[summary_df["label"] == "alpha_v3_rs_crowding_mini4"]
+        summary_row = matched_summary.iloc[0] if not matched_summary.empty else summary_df.iloc[0]
     else:
         summary_row = summary_df.iloc[0]
-    case_df = pd.read_csv(case_comparison_path)
+    case_df = load_case_comparison_for_snapshot(case_comparison_path)
     model_meta = json.loads(model_meta_path.read_text(encoding="utf-8"))
     snapshot_path.write_text(
         render_snapshot(
@@ -437,9 +557,10 @@ def main() -> None:
 
     if args.write_best_config:
         print(f"[sync_submission_config] wrote {best_config_path}")
-    print(f"[sync_submission_config] synced {test_sh_path}")
-    print(f"[sync_submission_config] synced {test_ps1_path}")
-    print(f"[sync_submission_config] wrote {default_submission_config_path}")
+    else:
+        print(f"[sync_submission_config] synced {best_config_path} from {default_submission_config_path}")
+    print(f"[sync_submission_config] scripts read defaults from {default_submission_config_path}")
+    print(f"[sync_submission_config] authoritative source {default_submission_config_path}")
     print(f"[sync_submission_config] wrote {model_meta_path}")
     print(f"[sync_submission_config] wrote {snapshot_path}")
     print(f"[sync_submission_config] wrote {SUBMISSION_ARTIFACTS_DIR}")

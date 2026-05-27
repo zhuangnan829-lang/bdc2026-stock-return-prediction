@@ -6,6 +6,7 @@ import pandas as pd
 
 from config import BEST_PROFILE_NAME, build_default_inference_args, resolve_metadata_artifact_path
 from lstm_utils import build_sequence_dataset, load_lstm_checkpoint, predict_sequences, transform_sequences
+from market_regime_split import build_daily_market_regimes
 from utils import (
     apply_turnover_cap,
     build_candidate_debug_frame,
@@ -26,6 +27,8 @@ DEFAULT_TURNOVER_RATE_UPPER_PCT = DEFAULTS["turnover_rate_upper_pct"]
 DEFAULT_TURNOVER_RATIO_UPPER_PCT = DEFAULTS["turnover_ratio_upper_pct"]
 DEFAULT_RISK_PENALTY_WEIGHT = DEFAULTS["risk_penalty_weight"]
 DEFAULT_WEIGHTING_SCHEME = DEFAULTS["weighting_scheme"]
+DEFAULT_WEIGHT_BLEND_ALPHA = DEFAULTS["weight_blend_alpha"]
+DEFAULT_MAX_SINGLE_WEIGHT = DEFAULTS["max_single_weight"]
 DEFAULT_MAX_TURNOVER = DEFAULTS["max_turnover"]
 DEFAULT_SORT_STRATEGY = DEFAULTS["sort_strategy"]
 
@@ -53,13 +56,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--weighting_scheme",
-        choices=["equal", "pred", "risk_adjusted"],
+        choices=["equal", "pred", "risk_adjusted", "pred_equal_blend"],
         default=DEFAULT_WEIGHTING_SCHEME,
     )
+    parser.add_argument("--weight_blend_alpha", type=float, default=DEFAULT_WEIGHT_BLEND_ALPHA)
+    parser.add_argument("--max_single_weight", type=float, default=DEFAULT_MAX_SINGLE_WEIGHT)
     parser.add_argument("--previous_result_path")
     parser.add_argument("--max_turnover", type=float, default=DEFAULT_MAX_TURNOVER)
     parser.add_argument("--rerank_signal_column")
     parser.add_argument("--rerank_signal_weight", type=float, default=0.0)
+    parser.add_argument("--regime_rerank_enabled", action="store_true")
+    parser.add_argument("--regime_rerank_flag", default="")
+    parser.add_argument("--regime_rerank_signal", default="")
+    parser.add_argument("--regime_rerank_weight", type=float, default=0.0)
     parser.add_argument("--secondary_candidate_size", type=int)
     parser.add_argument(
         "--secondary_screen_mode",
@@ -119,6 +128,53 @@ def resolve_history_frame(feature_path: Path, history_feature_path: str | None) 
     return history_df
 
 
+def resolve_effective_rerank(
+    *,
+    args: argparse.Namespace,
+    context_df: pd.DataFrame,
+    latest_date: pd.Timestamp,
+) -> tuple[str | None, float, dict]:
+    diagnostics = {
+        "regime_rerank_enabled": bool(args.regime_rerank_enabled),
+        "regime_rerank_active": False,
+        "regime_rerank_flag": args.regime_rerank_flag or "",
+        "regime_rerank_signal": args.regime_rerank_signal or "",
+        "regime_rerank_weight": float(args.regime_rerank_weight),
+        "latest_regime": "",
+    }
+    if not args.regime_rerank_enabled:
+        return args.rerank_signal_column, float(args.rerank_signal_weight), diagnostics
+
+    if not args.regime_rerank_flag or not args.regime_rerank_signal:
+        raise ValueError("--regime_rerank_flag and --regime_rerank_signal are required when regime rerank is enabled")
+    if args.regime_rerank_signal not in context_df.columns:
+        raise ValueError(f"Missing regime rerank signal column: {args.regime_rerank_signal}")
+
+    regime_df = build_daily_market_regimes(context_df)
+    regime_df["date"] = pd.to_datetime(regime_df["date"], errors="coerce").dt.normalize()
+    flag = args.regime_rerank_flag
+    if flag not in regime_df.columns:
+        raise ValueError(f"Unknown regime flag `{flag}`. Available columns: {list(regime_df.columns)}")
+
+    latest_key = pd.Timestamp(latest_date).normalize()
+    latest_rows = regime_df[regime_df["date"].eq(latest_key)]
+    if latest_rows.empty:
+        raise ValueError(f"No market regime row found for latest date {latest_key.date()}")
+    latest_regime = latest_rows.iloc[-1]
+    active = bool(int(latest_regime[flag]))
+    diagnostics.update(
+        {
+            "regime_rerank_active": active,
+            "latest_regime": str(latest_regime.get("primary_regime", "")),
+            "latest_market_volatility_20d": float(latest_regime.get("market_volatility_20d", 0.0)),
+            "latest_volatility_threshold": float(latest_regime.get("volatility_threshold", 0.0)),
+        }
+    )
+    if active:
+        return args.regime_rerank_signal, float(args.regime_rerank_weight), diagnostics
+    return args.rerank_signal_column, float(args.rerank_signal_weight), diagnostics
+
+
 def main() -> None:
     args = parse_args()
     feature_path = Path(args.feature_path)
@@ -176,6 +232,11 @@ def main() -> None:
     latest_df = latest_df.merge(latest_scores, on=["stock_id", "date"], how="inner")
     if latest_df.empty:
         raise ValueError("No prediction rows found for the latest date after sequence construction")
+    effective_rerank_column, effective_rerank_weight, regime_diagnostics = resolve_effective_rerank(
+        args=args,
+        context_df=context_df,
+        latest_date=latest_date,
+    )
 
     selected, diagnostics = select_top_candidates(
         latest_df=latest_df,
@@ -188,8 +249,8 @@ def main() -> None:
         turnover_ratio_upper_pct=args.turnover_ratio_upper_pct,
         risk_penalty_weight=args.risk_penalty_weight,
         sort_strategy=args.sort_strategy,
-        rerank_signal_column=args.rerank_signal_column,
-        rerank_signal_weight=args.rerank_signal_weight,
+        rerank_signal_column=effective_rerank_column,
+        rerank_signal_weight=effective_rerank_weight,
         secondary_candidate_size=args.secondary_candidate_size,
         secondary_screen_mode=args.secondary_screen_mode,
         secondary_screen_weight=args.secondary_screen_weight,
@@ -198,8 +259,15 @@ def main() -> None:
         enable_risk_filters=True,
         allow_cash_fallback=False,
     )
+    diagnostics.update(regime_diagnostics)
 
-    weighted = build_portfolio_weights(selected, top_k=args.top_k, weighting_scheme=args.weighting_scheme)
+    weighted = build_portfolio_weights(
+        selected,
+        top_k=args.top_k,
+        weighting_scheme=args.weighting_scheme,
+        max_single_weight=args.max_single_weight,
+        weight_blend_alpha=args.weight_blend_alpha,
+    )
     target_weights = dict(zip(weighted["stock_id"], weighted["weight"]))
 
     previous_weights: dict[str, float] = {}
@@ -237,7 +305,7 @@ def main() -> None:
     validate_result(result)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    result.to_csv(output_path, index=False, encoding="utf-8")
+    result.to_csv(output_path, index=False, encoding="utf-8", lineterminator="\n")
 
     if args.score_output_path:
         score_output_path = Path(args.score_output_path)
@@ -265,9 +333,13 @@ def main() -> None:
     print(f"[test_lstm] diagnostics={diagnostics}")
     print(
         f"[test_lstm] weighting_scheme={args.weighting_scheme} "
+        f"weight_blend_alpha={args.weight_blend_alpha:.6f} "
+        f"max_single_weight={args.max_single_weight:.6f} "
         f"sort_strategy={args.sort_strategy} "
-        f"rerank_signal_column={args.rerank_signal_column or 'none'} "
-        f"rerank_signal_weight={args.rerank_signal_weight:.6f} "
+        f"rerank_signal_column={effective_rerank_column or 'none'} "
+        f"rerank_signal_weight={effective_rerank_weight:.6f} "
+        f"regime_rerank_enabled={int(args.regime_rerank_enabled)} "
+        f"regime_rerank_active={int(regime_diagnostics['regime_rerank_active'])} "
         f"secondary_candidate_size={args.secondary_candidate_size or 0} "
         f"secondary_screen_mode={args.secondary_screen_mode} "
         f"secondary_screen_weight={args.secondary_screen_weight:.6f} "

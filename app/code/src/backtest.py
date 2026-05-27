@@ -37,6 +37,8 @@ DEFAULT_TURNOVER_RATE_UPPER_PCT = DEFAULTS["turnover_rate_upper_pct"]
 DEFAULT_TURNOVER_RATIO_UPPER_PCT = DEFAULTS["turnover_ratio_upper_pct"]
 DEFAULT_RISK_PENALTY_WEIGHT = DEFAULTS["risk_penalty_weight"]
 DEFAULT_WEIGHTING_SCHEME = DEFAULTS["weighting_scheme"]
+DEFAULT_WEIGHT_BLEND_ALPHA = DEFAULTS["weight_blend_alpha"]
+DEFAULT_MAX_SINGLE_WEIGHT = DEFAULTS["max_single_weight"]
 DEFAULT_TRANSACTION_COST = DEFAULTS["transaction_cost"]
 DEFAULT_MAX_TURNOVER = DEFAULTS["max_turnover"]
 DEFAULT_SORT_STRATEGY = DEFAULTS["sort_strategy"]
@@ -54,6 +56,7 @@ DEFAULT_COMPARE_PROFILES = [
         "turnover_ratio_upper_pct": float(RISK_FILTER_DEFAULTS["turnover_ratio_upper_pct"]),
         "risk_penalty_weight": float(RISK_FILTER_DEFAULTS["risk_penalty_weight"]),
         "weighting_scheme": SELECTION_DEFAULTS["weighting_scheme"],
+        "max_single_weight": float(SELECTION_DEFAULTS.get("max_single_weight", 1.0)),
         "sort_strategy": SELECTION_DEFAULTS["sort_strategy"],
         "max_turnover": 1.0,
     },
@@ -180,9 +183,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--risk_penalty_weight", type=float, default=DEFAULT_RISK_PENALTY_WEIGHT)
     parser.add_argument(
         "--weighting_scheme",
-        choices=["equal", "pred", "risk_adjusted"],
+        choices=["equal", "pred", "risk_adjusted", "pred_equal_blend"],
         default=DEFAULT_WEIGHTING_SCHEME,
     )
+    parser.add_argument("--weight_blend_alpha", type=float, default=DEFAULT_WEIGHT_BLEND_ALPHA)
+    parser.add_argument("--max_single_weight", type=float, default=DEFAULT_MAX_SINGLE_WEIGHT)
     parser.add_argument(
         "--sort_strategy",
         choices=["pure_prediction", "risk_adjusted"],
@@ -280,6 +285,16 @@ def calculate_sharpe(returns: pd.Series) -> float:
     return float(returns.mean() / std * np.sqrt(52.0))
 
 
+def calculate_max_contribution_share(holding_df: pd.DataFrame) -> float:
+    if holding_df.empty or "executed_weight" not in holding_df or "target_return" not in holding_df:
+        return 0.0
+    contribution = (holding_df["executed_weight"].astype(float) * holding_df["target_return"].astype(float)).abs()
+    total = float(contribution.sum())
+    if total <= 1e-12:
+        return 0.0
+    return float(contribution.max() / total)
+
+
 def maybe_write_backtest_plots(daily_df: pd.DataFrame, output_dir: Path) -> list[Path]:
     if daily_df.empty:
         return []
@@ -288,12 +303,14 @@ def maybe_write_backtest_plots(daily_df: pd.DataFrame, output_dir: Path) -> list
     except Exception:
         return []
 
+    figure_dir = output_dir / "figures"
+    figure_dir.mkdir(exist_ok=True)
     written_paths: list[Path] = []
     for profile_name, profile_df in daily_df.groupby("profile_name"):
         plot_df = profile_df.copy()
         plot_df["date"] = pd.to_datetime(plot_df["date"])
 
-        equity_path = output_dir / f"backtest_equity_{profile_name}.png"
+        equity_path = figure_dir / f"backtest_equity_{profile_name}.png"
         fig, ax = plt.subplots(figsize=(10, 4.5))
         ax.plot(plot_df["date"], plot_df["net_value_before_cost"], label="Before Cost")
         ax.plot(plot_df["date"], plot_df["net_value_after_cost"], label="After Cost")
@@ -307,7 +324,7 @@ def maybe_write_backtest_plots(daily_df: pd.DataFrame, output_dir: Path) -> list
         plt.close(fig)
         written_paths.append(equity_path)
 
-        drawdown_path = output_dir / f"backtest_drawdown_{profile_name}.png"
+        drawdown_path = figure_dir / f"backtest_drawdown_{profile_name}.png"
         fig, ax = plt.subplots(figsize=(10, 4.5))
         ax.plot(plot_df["date"], plot_df["drawdown_before_cost"], label="Before Cost")
         ax.plot(plot_df["date"], plot_df["drawdown_after_cost"], label="After Cost")
@@ -350,24 +367,54 @@ def write_backtest_report(summary_df: pd.DataFrame, output_dir: Path, comparison
                 f"- cumulative_return_after_cost: `{best['cumulative_return_after_cost']:.6f}`",
                 f"- sharpe_after_cost: `{best['sharpe_after_cost']:.6f}`",
                 f"- max_drawdown_after_cost: `{best['max_drawdown_after_cost']:.6f}`",
+                f"- max_single_contribution_share: `{best.get('max_single_contribution_share', 0.0):.6f}`",
                 f"- avg_turnover: `{best['avg_turnover']:.6f}`",
                 "",
                 "## Ranked Summary",
                 "",
-                "| profile_name | cum_after_cost | sharpe_after_cost | max_dd_after_cost | avg_turnover | best |",
-                "|---|---:|---:|---:|---:|---|",
+                "| profile_name | cum_after_cost | sharpe_after_cost | max_dd_after_cost | max_contrib_share | avg_turnover | best |",
+                "|---|---:|---:|---:|---:|---:|---|",
             ]
         )
         for _, row in ranked.iterrows():
             lines.append(
                 f"| {row['profile_name']} | {row['cumulative_return_after_cost']:.6f} | "
                 f"{row['sharpe_after_cost']:.6f} | {row['max_drawdown_after_cost']:.6f} | "
+                f"{row.get('max_single_contribution_share', 0.0):.6f} | "
                 f"{row['avg_turnover']:.6f} | {'yes' if row['is_best_profile'] else 'no'} |"
             )
         lines.extend(["", f"Reference CSV: `{comparison_path.name}`", ""])
 
     report_path.write_text("\n".join(lines), encoding="utf-8")
     return report_path
+
+
+def write_result_snapshot(summary_df: pd.DataFrame, holdings_df: pd.DataFrame, output_dir: Path) -> Path:
+    result_path = output_dir / "result.csv"
+    if summary_df.empty or holdings_df.empty:
+        pd.DataFrame(columns=["stock_id", "weight"]).to_csv(result_path, index=False, encoding="utf-8-sig")
+        return result_path
+
+    best_profile = (
+        summary_df.sort_values(
+            ["cumulative_return_after_cost", "sharpe_after_cost", "avg_turnover"],
+            ascending=[False, False, True],
+        )
+        .iloc[0]["profile_name"]
+    )
+    profile_holdings = holdings_df[holdings_df["profile_name"] == best_profile].copy()
+    if profile_holdings.empty:
+        result_df = pd.DataFrame(columns=["stock_id", "weight"])
+    else:
+        latest_date = profile_holdings["date"].max()
+        result_df = (
+            profile_holdings[profile_holdings["date"] == latest_date]
+            .sort_values(["executed_weight", "stock_id"], ascending=[False, True])
+            .loc[:, ["stock_id", "executed_weight"]]
+            .rename(columns={"executed_weight": "weight"})
+        )
+    result_df.to_csv(result_path, index=False, encoding="utf-8-sig")
+    return result_path
 
 
 def make_config(args: argparse.Namespace, overrides: dict | None = None) -> dict:
@@ -384,6 +431,8 @@ def make_config(args: argparse.Namespace, overrides: dict | None = None) -> dict
         "turnover_ratio_upper_pct": float(args.turnover_ratio_upper_pct),
         "risk_penalty_weight": float(args.risk_penalty_weight),
         "weighting_scheme": args.weighting_scheme,
+        "weight_blend_alpha": float(args.weight_blend_alpha),
+        "max_single_weight": float(args.max_single_weight),
         "sort_strategy": args.sort_strategy,
         "transaction_cost": float(args.transaction_cost),
         "max_turnover": float(args.max_turnover),
@@ -441,6 +490,8 @@ def run_backtest(
             selected,
             top_k=config["top_k"],
             weighting_scheme=config["weighting_scheme"],
+            max_single_weight=config.get("max_single_weight"),
+            weight_blend_alpha=float(config.get("weight_blend_alpha", 1.0)),
         )
 
         target_weights = dict(zip(selected["stock_id"], selected["weight"]))
@@ -514,6 +565,9 @@ def run_backtest(
                 "target_weights": ",".join(f"{weight:.6f}" for weight in selected["weight"].tolist()),
                 "selected_pred_returns": ",".join(f"{value:.6f}" for value in executed_sorted["pred_return"].tolist()),
                 "selected_target_returns": ",".join(f"{value:.6f}" for value in executed_sorted["target_return"].tolist()),
+                "max_single_weight": float(executed_sorted["executed_weight"].max()) if not executed_sorted.empty else 0.0,
+                "top2_weight_sum": float(executed_sorted["executed_weight"].nlargest(2).sum()) if not executed_sorted.empty else 0.0,
+                "max_single_contribution_share": calculate_max_contribution_share(executed_sorted),
                 "filter_initial_candidates": diagnostics.get("initial_candidates", 0),
                 "filter_after_primary_screen": diagnostics.get("after_primary_screen", 0),
                 "filter_after_risk_filters": diagnostics.get("after_risk_filters", 0),
@@ -539,6 +593,8 @@ def run_backtest(
         "profile_name": config["profile_name"],
         "prediction_source": prediction_source,
         "weighting_scheme": config["weighting_scheme"],
+        "weight_blend_alpha": float(config.get("weight_blend_alpha", 1.0)),
+        "max_single_weight_param": float(config.get("max_single_weight", 1.0)),
         "sort_strategy": config["sort_strategy"],
         "top_k": int(config["top_k"]),
         "enable_risk_filters": bool(config["enable_risk_filters"]),
@@ -574,6 +630,11 @@ def run_backtest(
         "avg_selected_count": float(daily_df["selected_count"].mean()) if not daily_df.empty else 0.0,
         "avg_signal_count": float(daily_df["signal_count"].mean()) if not daily_df.empty else 0.0,
         "avg_cash_weight": float(daily_df["cash_weight"].mean()) if not daily_df.empty else 0.0,
+        "avg_max_single_weight": float(daily_df["max_single_weight"].mean()) if not daily_df.empty else 0.0,
+        "max_single_weight_observed": float(daily_df["max_single_weight"].max()) if not daily_df.empty else 0.0,
+        "avg_top2_weight_sum": float(daily_df["top2_weight_sum"].mean()) if not daily_df.empty else 0.0,
+        "avg_max_single_contribution_share": float(daily_df["max_single_contribution_share"].mean()) if not daily_df.empty else 0.0,
+        "max_single_contribution_share": float(daily_df["max_single_contribution_share"].max()) if not daily_df.empty else 0.0,
         "avg_turnover": float(daily_df["turnover"].mean()) if not daily_df.empty else 0.0,
         "avg_desired_turnover": float(daily_df["desired_turnover"].mean()) if not daily_df.empty else 0.0,
         "avg_execution_strength": float(daily_df["execution_strength"].mean()) if not daily_df.empty else 0.0,
@@ -643,6 +704,7 @@ def main() -> None:
     ).to_csv(comparison_path, index=False, encoding="utf-8-sig")
     report_path = write_backtest_report(summary_df, output_dir, comparison_path)
     plot_paths = maybe_write_backtest_plots(daily_df, output_dir)
+    result_path = write_result_snapshot(summary_df, holdings_df, output_dir)
 
     best = summary_df.sort_values(
         ["cumulative_return_after_cost", "sharpe_after_cost", "avg_turnover"],
@@ -662,6 +724,7 @@ def main() -> None:
     print(f"[backtest] wrote {holdings_path}")
     print(f"[backtest] wrote {comparison_path}")
     print(f"[backtest] wrote {report_path}")
+    print(f"[backtest] wrote {result_path}")
     for plot_path in plot_paths:
         print(f"[backtest] wrote {plot_path}")
 

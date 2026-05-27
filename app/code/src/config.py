@@ -1,6 +1,12 @@
 import json
 from pathlib import Path
 
+from load_submission_config import (
+    DEFAULT_SUBMISSION_CONFIG_PATH,
+    build_default_inference_args as build_submission_inference_args,
+    load_submission_config,
+)
+
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 BEST_CONFIG_PATH = ROOT_DIR / "app" / "model" / "best_config.json"
@@ -45,17 +51,4 @@ EXECUTION_DEFAULTS = BEST_CONFIG["execution"]
 
 
 def build_default_inference_args() -> dict:
-    return {
-        "top_k": int(SELECTION_DEFAULTS["top_k"]),
-        "primary_candidate_size": int(SELECTION_DEFAULTS["primary_candidate_size"]),
-        "sort_strategy": SELECTION_DEFAULTS["sort_strategy"],
-        "weighting_scheme": SELECTION_DEFAULTS["weighting_scheme"],
-        "max_volatility_20d_pct": float(RISK_FILTER_DEFAULTS["max_volatility_20d_pct"]),
-        "max_volatility_5d_pct": float(RISK_FILTER_DEFAULTS["max_volatility_5d_pct"]),
-        "turnover_rate_lower_pct": float(RISK_FILTER_DEFAULTS["turnover_rate_lower_pct"]),
-        "turnover_rate_upper_pct": float(RISK_FILTER_DEFAULTS["turnover_rate_upper_pct"]),
-        "turnover_ratio_upper_pct": float(RISK_FILTER_DEFAULTS["turnover_ratio_upper_pct"]),
-        "risk_penalty_weight": float(RISK_FILTER_DEFAULTS["risk_penalty_weight"]),
-        "max_turnover": float(EXECUTION_DEFAULTS["max_turnover"]),
-        "transaction_cost": float(EXECUTION_DEFAULTS["transaction_cost"]),
-    }
+    return build_submission_inference_args(load_submission_config(DEFAULT_SUBMISSION_CONFIG_PATH))

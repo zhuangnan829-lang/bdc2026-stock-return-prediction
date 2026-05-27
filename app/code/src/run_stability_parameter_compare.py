@@ -14,6 +14,7 @@ from stability_diagnostics import (
     build_fold_diagnostics,
     load_prediction_artifact,
 )
+from evaluate_rank_stability import append_experiment_rank_stability
 
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -270,7 +271,12 @@ def main() -> None:
 
         backtest_row = backtest_summary_df.iloc[0]
         meta = model_info["meta"]
-        fold_meta_df = pd.DataFrame(meta.get("walk_forward_folds", []))
+        rank_ic_values = pd.to_numeric(fold_diag_df["rank_ic"], errors="coerce").dropna()
+        negative_day_rank_ic_ratio = (
+            float(pd.to_numeric(daily_diag_df["day_rank_ic"], errors="coerce").dropna().lt(0).mean())
+            if not daily_diag_df.empty
+            else 0.0
+        )
         rows.append(
             {
                 "profile_name": profile_name,
@@ -279,13 +285,13 @@ def main() -> None:
                 "risk_penalty_weight": float(risk_penalty_weight),
                 "sort_strategy": sort_strategy,
                 "primary_candidate_size": int(candidate_size),
-                "rank_ic_mean": float(meta["walk_forward_summary"]["rank_ic_mean"]),
+                "rank_ic_mean": float(rank_ic_values.mean()) if not rank_ic_values.empty else 0.0,
+                "rank_ic_std": float(rank_ic_values.std(ddof=0)) if len(rank_ic_values) > 1 else 0.0,
                 "top5_mean_return_mean": float(meta["walk_forward_summary"]["top5_mean_return_mean"]),
-                "worst_fold_rank_ic": float(fold_meta_df["rank_ic"].min()) if not fold_meta_df.empty else 0.0,
-                "best_fold_rank_ic": float(fold_meta_df["rank_ic"].max()) if not fold_meta_df.empty else 0.0,
-                "avg_negative_day_rank_ic_ratio": float(fold_diag_df["negative_day_rank_ic_ratio"].mean())
-                if not fold_diag_df.empty
-                else 0.0,
+                "worst_fold_rank_ic": float(rank_ic_values.min()) if not rank_ic_values.empty else 0.0,
+                "best_fold_rank_ic": float(rank_ic_values.max()) if not rank_ic_values.empty else 0.0,
+                "negative_day_rank_ic_ratio": negative_day_rank_ic_ratio,
+                "avg_negative_day_rank_ic_ratio": negative_day_rank_ic_ratio,
                 "avg_after_risk_filters": float(fold_diag_df["avg_after_risk_filters"].mean())
                 if not fold_diag_df.empty
                 else 0.0,
@@ -311,6 +317,21 @@ def main() -> None:
         )
         backtest_summary_df.to_csv(
             per_profile_dir / "backtest_summary.csv", index=False, encoding="utf-8-sig"
+        )
+        append_experiment_rank_stability(
+            experiment_name=f"stability_parameter_compare/{profile_name}",
+            prediction_path=model_info["model_dir"] / "walk_forward_predictions.csv",
+            fold_diagnostics_path=per_profile_dir / "fold_diagnostics.csv",
+            fold_daily_diagnostics_path=per_profile_dir / "fold_daily_diagnostics.csv",
+            backtest_summary_path=per_profile_dir / "backtest_summary.csv",
+            extra_fields={
+                "profile_name": profile_name,
+                "model_dir": str(model_info["model_dir"]),
+                "sequence_length": int(sequence_length),
+                "risk_penalty_weight": float(risk_penalty_weight),
+                "sort_strategy": sort_strategy,
+                "primary_candidate_size": int(candidate_size),
+            },
         )
 
     summary_df = pd.DataFrame(rows)

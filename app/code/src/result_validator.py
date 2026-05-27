@@ -1,4 +1,5 @@
 import argparse
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -63,4 +64,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        print(f"[result_validator][ERROR] {exc}", file=sys.stderr)
+        sys.exit(1)

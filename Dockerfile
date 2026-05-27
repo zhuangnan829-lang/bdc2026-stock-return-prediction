@@ -11,9 +11,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --upgrade pip && pip install -r /tmp/requirements.txt
+RUN pip install --upgrade pip \
+    && grep -v '^torch==' /tmp/requirements.txt > /tmp/requirements-no-torch.txt \
+    && pip install --retries 10 --timeout 120 -r /tmp/requirements-no-torch.txt \
+    && pip install --retries 10 --timeout 120 --index-url https://download.pytorch.org/whl/cpu torch==2.11.0
 
 COPY app /app
+
+RUN find /app -type f \( -name "*.sh" -o -name "*.ps1" \) -exec sed -i 's/\r$//' {} +
 
 RUN chmod +x \
     /app/init.sh \

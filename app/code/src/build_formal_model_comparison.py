@@ -41,7 +41,7 @@ MODEL_SPECS = [
         "model_family": "xgboost",
         "model_dir": ROOT_DIR / "app" / "model" / "xgboost_baseline",
         "formal_candidate": "否",
-        "notes": "补充树模型对照，当前为旧特征集结果",
+        "notes": "同特征集树模型对照",
     },
 ]
 

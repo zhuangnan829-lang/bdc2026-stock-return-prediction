@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from config import BEST_CONFIG, BEST_PROFILE_NAME
+from utils_seed import set_seed
 from lstm_utils import (
     build_sequence_dataset,
     fit_sequence_scaler,
@@ -26,13 +27,13 @@ from train import (
     DEFAULT_VALID_DATES,
     MODEL_LABEL_COLUMN,
     RAW_LABEL_COLUMN,
+    SAMPLE_WEIGHT_COLUMN,
     SEED,
     add_training_target,
     build_walk_forward_folds,
     compute_fold_metrics,
     load_training_frame,
     resolve_feature_columns,
-    set_seed,
     summarise_metrics,
 )
 
@@ -66,6 +67,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--epochs", type=int, default=12)
     parser.add_argument("--patience", type=int, default=3)
+    parser.add_argument("--seed", type=int, default=SEED)
     return parser.parse_args()
 
 
@@ -91,6 +93,7 @@ def build_fold_sequence_sets(
         target_dates=train_dates,
         label_column=MODEL_LABEL_COLUMN,
         raw_label_column=RAW_LABEL_COLUMN,
+        sample_weight_column=SAMPLE_WEIGHT_COLUMN,
     )
     valid_bundle = build_sequence_dataset(
         combined,
@@ -99,6 +102,7 @@ def build_fold_sequence_sets(
         target_dates=valid_dates,
         label_column=MODEL_LABEL_COLUMN,
         raw_label_column=RAW_LABEL_COLUMN,
+        sample_weight_column=SAMPLE_WEIGHT_COLUMN,
     )
     return train_bundle, valid_bundle
 
@@ -118,6 +122,7 @@ def run_walk_forward_transformer(
     batch_size: int,
     epochs: int,
     patience: int,
+    base_seed: int,
 ) -> tuple[list[dict], pd.DataFrame, list[dict]]:
     folds = build_walk_forward_folds(df, valid_dates, num_folds)
     fold_metrics: list[dict] = []
@@ -144,8 +149,10 @@ def run_walk_forward_transformer(
         model, training_info = train_transformer_model(
             train_x=train_x,
             train_y=train_bundle.y,
+            train_weight=train_bundle.sample_weight,
             valid_x=valid_x,
             valid_y=valid_bundle.y,
+            valid_weight=valid_bundle.sample_weight,
             input_size=len(feature_columns),
             d_model=d_model,
             nhead=nhead,
@@ -156,7 +163,7 @@ def run_walk_forward_transformer(
             batch_size=batch_size,
             epochs=epochs,
             patience=patience,
-            seed=SEED + fold_id,
+            seed=base_seed + fold_id,
         )
         valid_pred = predict_sequences(model, valid_x, batch_size=batch_size, device=next(model.parameters()).device)
 
@@ -206,6 +213,7 @@ def fit_final_transformer(
     batch_size: int,
     epochs: int,
     patience: int,
+    seed: int,
 ) -> tuple:
     all_dates = set(pd.to_datetime(df["date"]).tolist())
     bundle = build_sequence_dataset(
@@ -215,6 +223,7 @@ def fit_final_transformer(
         target_dates=all_dates,
         label_column=MODEL_LABEL_COLUMN,
         raw_label_column=RAW_LABEL_COLUMN,
+        sample_weight_column=SAMPLE_WEIGHT_COLUMN,
     )
     if len(bundle.x) == 0:
         raise ValueError("No final training sequences were built for Transformer")
@@ -224,8 +233,10 @@ def fit_final_transformer(
     model, training_info = train_transformer_model(
         train_x=train_x,
         train_y=bundle.y,
+        train_weight=bundle.sample_weight,
         valid_x=None,
         valid_y=None,
+        valid_weight=None,
         input_size=len(feature_columns),
         d_model=d_model,
         nhead=nhead,
@@ -236,7 +247,7 @@ def fit_final_transformer(
         batch_size=batch_size,
         epochs=epochs,
         patience=patience,
-        seed=SEED,
+        seed=seed,
     )
     return model, scaler_mean, scaler_std, bundle, training_info
 
@@ -247,7 +258,7 @@ def main() -> None:
     model_dir = Path(args.model_dir)
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    set_seed(SEED)
+    seed = set_seed(args.seed)
     df = load_training_frame(feature_path)
     df = add_training_target(df, args.target_mode)
     feature_columns = resolve_feature_columns(args.feature_set)
@@ -267,6 +278,7 @@ def main() -> None:
         batch_size=args.batch_size,
         epochs=args.epochs,
         patience=args.patience,
+        base_seed=seed,
     )
     metric_summary = summarise_metrics(fold_metrics)
     diagnostic_prediction_df = merge_prediction_with_features(
@@ -291,6 +303,7 @@ def main() -> None:
         batch_size=args.batch_size,
         epochs=args.epochs,
         patience=args.patience,
+        seed=seed,
     )
     model_path = model_dir / "transformer_model.pt"
     save_transformer_checkpoint(
@@ -342,6 +355,7 @@ def main() -> None:
             "feature_set": BEST_CONFIG["training"]["feature_set"],
             "target_mode": BEST_CONFIG["training"]["target_mode"],
             "model_family": "transformer",
+            "seed": int(BEST_CONFIG["training"].get("seed", SEED)),
             "sort_strategy": BEST_CONFIG["selection"]["sort_strategy"],
             "weighting_scheme": BEST_CONFIG["selection"]["weighting_scheme"],
             "top_k": int(BEST_CONFIG["selection"]["top_k"]),
@@ -359,7 +373,7 @@ def main() -> None:
         "model_label_column": MODEL_LABEL_COLUMN,
         "target_mode": args.target_mode,
         "model_family": "transformer",
-        "seed": SEED,
+        "seed": seed,
         "valid_dates": args.valid_dates,
         "num_folds": args.num_folds,
         "sequence_length": args.sequence_length,
@@ -393,6 +407,7 @@ def main() -> None:
     print("[train_transformer] backend=torch_transformer")
     print(f"[train_transformer] feature_set={args.feature_set}")
     print(f"[train_transformer] target_mode={args.target_mode}")
+    print(f"[train_transformer] seed={seed}")
     print(f"[train_transformer] sequence_length={args.sequence_length}")
     print(f"[train_transformer] d_model={args.d_model} nhead={args.nhead} num_layers={args.num_layers}")
     print(f"[train_transformer] feature_count={len(feature_columns)}")

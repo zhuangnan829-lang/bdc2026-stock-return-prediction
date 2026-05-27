@@ -1,7 +1,9 @@
 import argparse
 import json
+import sys
 from pathlib import Path
 
+from compare_config_consistency import compare_config_consistency as run_config_consistency_check
 from config import BEST_CONFIG_PATH, resolve_metadata_artifact_path
 from result_validator import validate_result_file
 
@@ -46,31 +48,6 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def compare_config_consistency(root_dir: Path) -> dict:
-    best_config = load_json(root_dir / "app/model/best_config.json")
-    default_submission_config = load_json(root_dir / "app/model/default_submission_config.json")
-    model_meta = load_json(root_dir / "app/model/model_meta.json")
-    meta_profile = model_meta.get("default_submission_profile")
-    if meta_profile is None:
-        meta_profile = {
-            "profile_name": model_meta.get("best_profile_name"),
-            "feature_set": model_meta.get("feature_set"),
-            "sort_strategy": best_config["selection"]["sort_strategy"],
-            "weighting_scheme": best_config["selection"]["weighting_scheme"],
-            "max_turnover": best_config["execution"]["max_turnover"],
-        }
-
-    checks = {
-        "best_vs_default_profile_name": best_config["profile_name"] == default_submission_config["profile_name"],
-        "best_vs_meta_profile_name": best_config["profile_name"] == meta_profile["profile_name"],
-        "best_vs_meta_feature_set": best_config["training"]["feature_set"] == meta_profile["feature_set"],
-        "best_vs_meta_sort_strategy": best_config["selection"]["sort_strategy"] == meta_profile["sort_strategy"],
-        "best_vs_meta_weighting_scheme": best_config["selection"]["weighting_scheme"] == meta_profile["weighting_scheme"],
-        "best_vs_meta_max_turnover": float(best_config["execution"]["max_turnover"]) == float(meta_profile["max_turnover"]),
-    }
-    return checks
-
-
 def validate_model_artifact_resolution(root_dir: Path) -> Path:
     model_meta = load_json(root_dir / "app/model/model_meta.json")
     resolved = resolve_metadata_artifact_path(root_dir / "app/model", model_meta["model_path"])
@@ -89,10 +66,14 @@ def main() -> None:
         raise FileNotFoundError(f"Missing required files: {missing}")
 
     result_summary = validate_result_file(result_path)
-    consistency = compare_config_consistency(root_dir)
+    consistency_ok, consistency_checks = run_config_consistency_check(
+        default_config_path=root_dir / "app/model/default_submission_config.json",
+        best_config_path=root_dir / "app/model/best_config.json",
+        model_meta_path=root_dir / "app/model/model_meta.json",
+    )
     resolved_model_path = validate_model_artifact_resolution(root_dir)
-    failed_checks = [name for name, ok in consistency.items() if not ok]
-    if failed_checks:
+    if not consistency_ok:
+        failed_checks = [check["name"] for check in consistency_checks if not check["ok"]]
         raise ValueError(f"Configuration consistency checks failed: {failed_checks}")
 
     print(f"[pre_submit_check] root_dir={root_dir}")
@@ -102,10 +83,14 @@ def main() -> None:
         f"[pre_submit_check] result_ok rows={result_summary['rows']} "
         f"weight_sum={result_summary['weight_sum']:.6f} encoding={result_summary['encoding']}"
     )
-    print(f"[pre_submit_check] config_consistency_ok={len(consistency)}")
+    print(f"[pre_submit_check] config_consistency_ok={len(consistency_checks)}")
     print(f"[pre_submit_check] resolved_model_path={resolved_model_path}")
     print("[pre_submit_check] all checks passed")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        print(f"[pre_submit_check][ERROR] {exc}", file=sys.stderr)
+        sys.exit(1)

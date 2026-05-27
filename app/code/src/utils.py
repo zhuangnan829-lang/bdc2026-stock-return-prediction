@@ -368,6 +368,8 @@ def build_portfolio_weights(
     selected_df: pd.DataFrame,
     top_k: int,
     weighting_scheme: str,
+    max_single_weight: float | None = None,
+    weight_blend_alpha: float = 1.0,
 ) -> pd.DataFrame:
     if selected_df.empty:
         out = selected_df.copy()
@@ -376,16 +378,24 @@ def build_portfolio_weights(
 
     out = selected_df.copy()
     invested_ratio = min(len(out), top_k) / float(top_k)
+    equal_weight = pd.Series(invested_ratio / float(len(out)), index=out.index, dtype=float)
 
     if weighting_scheme == "equal":
-        out["weight"] = 1.0 / float(top_k)
+        out["weight"] = equal_weight
+        out["weight"] = apply_single_weight_cap(out["weight"], max_single_weight)
         return out
 
-    if weighting_scheme == "pred":
+    if weighting_scheme in {"pred", "pred_equal_blend"}:
         raw = out["pred_return"].clip(lower=0.0)
         if raw.sum() <= 1e-12:
             raw = pd.Series(1.0, index=out.index)
-        out["weight"] = invested_ratio * raw / raw.sum()
+        pred_weight = invested_ratio * raw / raw.sum()
+        if weighting_scheme == "pred_equal_blend":
+            alpha = max(0.0, min(1.0, float(weight_blend_alpha)))
+            out["weight"] = alpha * pred_weight + (1.0 - alpha) * equal_weight
+        else:
+            out["weight"] = pred_weight
+        out["weight"] = apply_single_weight_cap(out["weight"], max_single_weight)
         return out
 
     if weighting_scheme == "risk_adjusted":
@@ -394,9 +404,43 @@ def build_portfolio_weights(
         if adjusted.sum() <= 1e-12:
             adjusted = pd.Series(1.0, index=out.index)
         out["weight"] = invested_ratio * adjusted / adjusted.sum()
+        out["weight"] = apply_single_weight_cap(out["weight"], max_single_weight)
         return out
 
     raise ValueError(f"Unsupported weighting_scheme: {weighting_scheme}")
+
+
+def apply_single_weight_cap(weights: pd.Series, max_single_weight: float | None = None) -> pd.Series:
+    if max_single_weight is None:
+        return weights.astype(float)
+
+    cap = float(max_single_weight)
+    if cap <= 0.0:
+        return pd.Series(0.0, index=weights.index, dtype=float)
+    if cap >= 1.0 or weights.empty:
+        return weights.astype(float)
+
+    capped = weights.astype(float).clip(lower=0.0).copy()
+    target_total = float(capped.sum())
+    if target_total <= 1e-12:
+        return capped
+
+    capped = capped.clip(upper=cap)
+    for _ in range(len(capped) + 1):
+        current_total = float(capped.sum())
+        shortfall = target_total - current_total
+        if shortfall <= 1e-12:
+            break
+
+        room = (cap - capped).clip(lower=0.0)
+        total_room = float(room.sum())
+        if total_room <= 1e-12:
+            break
+
+        add = room / total_room * min(shortfall, total_room)
+        capped = (capped + add).clip(upper=cap)
+
+    return capped
 
 
 def load_result_portfolio(path: str | Path) -> dict[str, float]:

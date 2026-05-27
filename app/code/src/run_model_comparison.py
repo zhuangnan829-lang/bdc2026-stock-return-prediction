@@ -6,6 +6,7 @@ import pandas as pd
 
 from backtest import load_or_generate_predictions, run_backtest
 from config import BEST_CONFIG
+from evaluate_rank_stability import append_stability_summary, summarize_prediction_rank_stability
 
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -13,8 +14,13 @@ DEFAULT_FEATURE_PATH = ROOT_DIR / "app" / "temp" / "train_features.csv"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "app" / "model" / "model_comparison"
 DEFAULT_MODEL_SPECS = [
     {
-        "model_family": "lightgbm",
+        "model_family": "lstm",
         "model_dir": ROOT_DIR / "app" / "model",
+        "label": "LSTM sl20",
+    },
+    {
+        "model_family": "lightgbm",
+        "model_dir": ROOT_DIR / "app" / "model" / "baseline_lightgbm_same_protocol",
         "label": "LightGBM",
     },
     {
@@ -23,14 +29,14 @@ DEFAULT_MODEL_SPECS = [
         "label": "XGBoost",
     },
     {
-        "model_family": "lstm",
-        "model_dir": ROOT_DIR / "app" / "model" / "lstm_baseline",
-        "label": "LSTM",
-    },
-    {
         "model_family": "transformer",
         "model_dir": ROOT_DIR / "app" / "model" / "transformer_baseline",
         "label": "Transformer",
+    },
+    {
+        "model_family": "linear_regression",
+        "model_dir": ROOT_DIR / "app" / "model" / "baseline_linear_same_protocol",
+        "label": "Linear Regression",
     },
 ]
 
@@ -86,6 +92,16 @@ def collect_single_model_summary(model_family: str, label: str, model_dir: Path,
     )
     backtest_summary = backtest_summary_df.iloc[0].to_dict()
     walk_forward_summary = metadata["walk_forward_summary"]
+    stability_summary = summarize_prediction_rank_stability(
+        prediction_df=prediction_df,
+        experiment_name=f"model_comparison/{model_family}",
+        extra_fields={
+            "model_family": model_family,
+            "model_label": label,
+            "model_dir": str(model_dir),
+        },
+    )
+    append_stability_summary({**stability_summary, **backtest_summary})
 
     return {
         "model_family": model_family,
@@ -96,7 +112,10 @@ def collect_single_model_summary(model_family: str, label: str, model_dir: Path,
         "feature_count": int(len(metadata.get("feature_columns", []))),
         "target_mode": metadata.get("target_mode", ""),
         "sequence_length": metadata.get("sequence_length", ""),
-        "rank_ic_mean": float(walk_forward_summary["rank_ic_mean"]),
+        "rank_ic_mean": float(stability_summary["rank_ic_mean"]),
+        "rank_ic_std": float(stability_summary["rank_ic_std"]),
+        "worst_fold_rank_ic": float(stability_summary["worst_fold_rank_ic"]),
+        "negative_day_rank_ic_ratio": float(stability_summary["negative_day_rank_ic_ratio"]),
         "top5_mean_return_mean": float(walk_forward_summary["top5_mean_return_mean"]),
         "rmse_mean": float(walk_forward_summary["rmse_mean"]),
         "mae_mean": float(walk_forward_summary["mae_mean"]),
@@ -115,8 +134,8 @@ def collect_single_model_summary(model_family: str, label: str, model_dir: Path,
 
 def write_report(summary_df: pd.DataFrame, output_path: Path) -> None:
     ranked = summary_df.sort_values(
-        ["cumulative_return_after_cost", "sharpe_after_cost", "rank_ic_mean"],
-        ascending=[False, False, False],
+        ["worst_fold_rank_ic", "negative_day_rank_ic_ratio", "cumulative_return_after_cost", "sharpe_after_cost"],
+        ascending=[False, True, False, False],
     ).reset_index(drop=True)
     ranked["is_best"] = "否"
     if not ranked.empty:
@@ -127,9 +146,14 @@ def write_report(summary_df: pd.DataFrame, output_path: Path) -> None:
         "",
         "## 对比口径",
         "",
-        "- 特征集：`base_technical_risk`",
-        "- 训练目标：`cross_section_rank`",
-        "- 选股逻辑：`risk_adjusted sort + pred weight + max_turnover=0.70`",
+        f"- 特征集：`{BEST_CONFIG['training']['feature_set']}`",
+        f"- 训练目标：`{BEST_CONFIG['training']['target_mode']}`",
+        (
+            "- 选股逻辑："
+            f"`{BEST_CONFIG['selection']['sort_strategy']} sort + "
+            f"{BEST_CONFIG['selection']['weighting_scheme']} weight + "
+            f"max_turnover={BEST_CONFIG['execution']['max_turnover']:.2f}`"
+        ),
         "- 回测口径：统一使用当前正式默认风险过滤与执行约束",
         "",
         "## 总结论",
@@ -150,14 +174,15 @@ def write_report(summary_df: pd.DataFrame, output_path: Path) -> None:
                 "",
                 "## 模型排序",
                 "",
-                "| 排名 | 模型 | rank_ic_mean | top5_mean_return_mean | cumulative_return_after_cost | sharpe_after_cost | max_drawdown_after_cost | avg_turnover | 是否最优 |",
-                "|---:|---|---:|---:|---:|---:|---:|---:|---|",
+                "| 排名 | 模型 | worst_fold_rank_ic | negative_day_rank_ic_ratio | rank_ic_mean | cumulative_return_after_cost | sharpe_after_cost | max_drawdown_after_cost | avg_turnover | 是否最优 |",
+                "|---:|---|---:|---:|---:|---:|---:|---:|---:|---|",
             ]
         )
         for idx, (_, row) in enumerate(ranked.iterrows(), start=1):
             lines.append(
                 f"| {idx} | {row['model_label']} | "
-                f"{row['rank_ic_mean']:.6f} | {row['top5_mean_return_mean']:.6f} | "
+                f"{row['worst_fold_rank_ic']:.6f} | {row['negative_day_rank_ic_ratio']:.6f} | "
+                f"{row['rank_ic_mean']:.6f} | "
                 f"{row['cumulative_return_after_cost']:.6f} | {row['sharpe_after_cost']:.6f} | "
                 f"{row['max_drawdown_after_cost']:.6f} | {row['avg_turnover']:.6f} | {row['is_best']} |"
             )
@@ -195,8 +220,8 @@ def main() -> None:
         )
 
     summary_df = pd.DataFrame(rows).sort_values(
-        ["cumulative_return_after_cost", "sharpe_after_cost", "rank_ic_mean"],
-        ascending=[False, False, False],
+        ["worst_fold_rank_ic", "negative_day_rank_ic_ratio", "cumulative_return_after_cost", "sharpe_after_cost"],
+        ascending=[False, True, False, False],
     ).reset_index(drop=True)
 
     summary_path = output_dir / "model_comparison_summary.csv"

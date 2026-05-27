@@ -1,7 +1,6 @@
 import argparse
 from itertools import combinations
 import json
-import random
 from pathlib import Path
 
 import joblib
@@ -17,15 +16,28 @@ from stability_diagnostics import (
     merge_prediction_with_features,
     write_fold_prediction_exports,
 )
+from evaluate_rank_stability import append_experiment_rank_stability
 
-from config import BEST_CONFIG, BEST_PROFILE_NAME, TRAINING_DEFAULTS
+from config import BEST_CONFIG, BEST_PROFILE_NAME, SELECTION_DEFAULTS, TRAINING_DEFAULTS
+from experiment_utils import (
+    resolve_training_output_dir,
+    tee_run_log,
+    write_experiment_config,
+    write_training_metric_exports,
+)
+from featurework import BASE_ALPHA_V4_MEDIUM_COLUMNS
+from utils_seed import DEFAULT_SEED, set_seed
 
 
 FEATURE_COLUMNS = [
     "ret_1d",
+    "ret_2d",
     "ret_3d",
     "ret_5d",
+    "ret_7d",
     "ret_10d",
+    "ret_15d",
+    "ret_20d",
     "mom_5d",
     "mom_10d",
     "intraday_return",
@@ -46,6 +58,7 @@ FEATURE_COLUMNS = [
     "volume_ratio_10d",
     "amount_change_1d",
     "amount_ratio_5d",
+    "amount_ratio_10d",
     "turnover_mean_5d",
     "turnover_mean_10d",
     "turnover_mean_20d",
@@ -101,6 +114,16 @@ FEATURE_COLUMNS = [
     "trend_persistence_score_10d_v2",
     "volatility_compression_breakout_20d",
     "crowding_reversal_risk_5d",
+    "close_position_10d",
+    "close_position_20d",
+    "ret_1d_zscore_cross_section",
+    "ret_3d_zscore_cross_section",
+    "volume_spike_zscore",
+    "turnover_spike_zscore",
+    "overheat_score",
+    "reversal_risk_score",
+    "relative_to_market_5d",
+    "relative_to_market_10d",
 ]
 
 FEATURE_GROUPS = {
@@ -261,6 +284,7 @@ FEATURE_SET_PRESETS = {
     "base_alpha_v3_rs_crowding": FEATURE_GROUPS["base"] + FEATURE_GROUPS["alpha_v3_rs_crowding"],
     "base_alpha_v3_rs_crowding_mini4": FEATURE_GROUPS["base"] + FEATURE_GROUPS["alpha_v3_rs_crowding_mini4"],
     "base_alpha_v4_micro": FEATURE_GROUPS["base"] + FEATURE_GROUPS["alpha_v4_micro"],
+    "base_alpha_v4_medium": BASE_ALPHA_V4_MEDIUM_COLUMNS,
     "base_alpha_v3_rs_crowding_mini4_alpha_v4_micro": (
         FEATURE_GROUPS["base"]
         + FEATURE_GROUPS["alpha_v3_rs_crowding_mini4"]
@@ -342,7 +366,7 @@ for left, right in combinations(ALPHA_V4_MICRO_COLUMNS, 2):
 RAW_LABEL_COLUMN = "target_return"
 MODEL_LABEL_COLUMN = "train_target"
 SAMPLE_WEIGHT_COLUMN = "train_sample_weight"
-SEED = 2026
+SEED = int(TRAINING_DEFAULTS.get("seed", DEFAULT_SEED))
 DEFAULT_VALID_DATES = int(TRAINING_DEFAULTS["valid_dates"])
 DEFAULT_NUM_FOLDS = int(TRAINING_DEFAULTS["num_folds"])
 DEFAULT_TARGET_MODE = TRAINING_DEFAULTS["target_mode"]
@@ -375,12 +399,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--topk_top10_weight", type=float, default=1.8)
     parser.add_argument("--topk_rank_pct_floor", type=float, default=0.90)
     parser.add_argument("--topk_rank_floor_weight", type=float, default=2.2)
+    parser.add_argument("--topk_focus_k", type=int, default=0)
+    parser.add_argument("--topk_gamma", type=float, default=0.0)
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--experiment_root", default=None)
+    parser.add_argument("--experiment_id", default=None)
+    parser.add_argument("--experiment_remark", default="exp")
+    parser.add_argument("--sort_strategy", default=SELECTION_DEFAULTS.get("sort_strategy", "risk_adjusted"))
+    parser.add_argument("--weighting_scheme", default=SELECTION_DEFAULTS.get("weighting_scheme", "pred"))
     return parser.parse_args()
-
-
-def set_seed(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
 
 
 def load_training_frame(feature_path: Path) -> pd.DataFrame:
@@ -401,6 +428,8 @@ def add_training_target(
     topk_top10_weight: float = 1.8,
     topk_rank_pct_floor: float = 0.90,
     topk_rank_floor_weight: float = 2.2,
+    topk_focus_k: int = 0,
+    topk_gamma: float = 0.0,
 ) -> pd.DataFrame:
     out = df.copy()
     out[SAMPLE_WEIGHT_COLUMN] = 1.0
@@ -416,17 +445,21 @@ def add_training_target(
         out[MODEL_LABEL_COLUMN] = out.groupby("date")[RAW_LABEL_COLUMN].rank(pct=True)
         desc_rank = out.groupby("date")[RAW_LABEL_COLUMN].rank(method="first", ascending=False)
         sample_weight = np.ones(len(out), dtype=np.float32)
-        sample_weight = np.where(desc_rank <= 5, float(topk_top5_weight), sample_weight)
-        sample_weight = np.where(
-            (desc_rank > 5) & (desc_rank <= 10),
-            np.maximum(sample_weight, float(topk_top10_weight)),
-            sample_weight,
-        )
-        sample_weight = np.where(
-            out[MODEL_LABEL_COLUMN] >= float(topk_rank_pct_floor),
-            np.maximum(sample_weight, float(topk_rank_floor_weight)),
-            sample_weight,
-        )
+        if int(topk_focus_k) > 0:
+            focused_weight = 1.0 + float(topk_gamma)
+            sample_weight = np.where(desc_rank <= int(topk_focus_k), focused_weight, sample_weight)
+        else:
+            sample_weight = np.where(desc_rank <= 5, float(topk_top5_weight), sample_weight)
+            sample_weight = np.where(
+                (desc_rank > 5) & (desc_rank <= 10),
+                np.maximum(sample_weight, float(topk_top10_weight)),
+                sample_weight,
+            )
+            sample_weight = np.where(
+                out[MODEL_LABEL_COLUMN] >= float(topk_rank_pct_floor),
+                np.maximum(sample_weight, float(topk_rank_floor_weight)),
+                sample_weight,
+            )
         out[SAMPLE_WEIGHT_COLUMN] = sample_weight.astype(np.float32)
         return out
 
@@ -443,7 +476,7 @@ def add_training_target(
     raise ValueError(f"Unsupported target_mode: {target_mode}")
 
 
-def build_model(model_family: str = "auto"):
+def build_model(model_family: str = "auto", seed: int = SEED):
     if model_family == "linear_regression":
         return LinearRegression(), "linear_regression"
 
@@ -459,7 +492,7 @@ def build_model(model_family: str = "auto"):
                 subsample=0.8,
                 colsample_bytree=0.8,
                 min_child_samples=80,
-                random_state=SEED,
+                random_state=seed,
                 n_jobs=-1,
             )
             return model, "lightgbm"
@@ -481,7 +514,7 @@ def build_model(model_family: str = "auto"):
                 colsample_bytree=0.8,
                 reg_alpha=0.0,
                 reg_lambda=1.0,
-                random_state=SEED,
+                random_state=seed,
                 n_jobs=-1,
             )
             return model, "xgboost"
@@ -494,7 +527,7 @@ def build_model(model_family: str = "auto"):
         max_iter=400,
         max_depth=6,
         min_samples_leaf=80,
-        random_state=SEED,
+        random_state=seed,
     )
     return model, "sklearn_histgbr"
 
@@ -568,6 +601,7 @@ def run_walk_forward(
     valid_dates: int,
     num_folds: int,
     model_family: str = "auto",
+    seed: int = SEED,
 ) -> tuple[list[dict], pd.DataFrame, str]:
     folds = build_walk_forward_folds(df, valid_dates, num_folds)
     fold_metrics = []
@@ -575,7 +609,7 @@ def run_walk_forward(
     backend_used = None
 
     for train_df, valid_df, fold_id in folds:
-        model, backend = build_model(model_family)
+        model, backend = build_model(model_family, seed=seed + fold_id)
         backend_used = backend
 
         model.fit(train_df[feature_columns], train_df[MODEL_LABEL_COLUMN])
@@ -617,8 +651,13 @@ def summarise_metrics(fold_metrics: list[dict]) -> dict:
     }
 
 
-def fit_final_model(df: pd.DataFrame, feature_columns: list[str], model_family: str = "auto") -> tuple[object, str]:
-    model, backend = build_model(model_family)
+def fit_final_model(
+    df: pd.DataFrame,
+    feature_columns: list[str],
+    model_family: str = "auto",
+    seed: int = SEED,
+) -> tuple[object, str]:
+    model, backend = build_model(model_family, seed=seed)
     model.fit(df[feature_columns], df[MODEL_LABEL_COLUMN])
     return model, backend
 
@@ -626,16 +665,73 @@ def fit_final_model(df: pd.DataFrame, feature_columns: list[str], model_family: 
 def main() -> None:
     args = parse_args()
     feature_path = Path(args.feature_path)
-    model_dir = Path(args.model_dir)
-    model_dir.mkdir(parents=True, exist_ok=True)
+    model_dir, experiment_id = resolve_training_output_dir(
+        requested_model_dir=Path(args.model_dir),
+        experiment_root=args.experiment_root,
+        experiment_id=args.experiment_id,
+        model=args.model_family,
+        feature=args.feature_set,
+        sequence_length=None,
+        sort_strategy=args.sort_strategy,
+        weighting_scheme=args.weighting_scheme,
+        remark=args.experiment_remark,
+    )
+    initial_experiment_config = {
+        "experiment_id": experiment_id,
+        "model_dir": str(model_dir),
+        "feature_path": str(feature_path),
+        "model_family": args.model_family,
+        "feature_set": args.feature_set,
+        "sequence_length": None,
+        "sort_strategy": args.sort_strategy,
+        "weighting_scheme": args.weighting_scheme,
+        "target_mode": args.target_mode,
+        "valid_dates": int(args.valid_dates),
+        "num_folds": int(args.num_folds),
+        "seed": int(args.seed),
+        "remark": args.experiment_remark,
+        "artifacts": {
+            "config": "config.json",
+            "metrics": "metrics.csv",
+            "fold_results": "fold_results.csv",
+            "backtest_summary": "backtest_summary.csv",
+            "result": "result.csv",
+            "run_log": "run.log",
+            "figures": "figures/",
+        },
+    }
+    if experiment_id:
+        write_experiment_config(model_dir, initial_experiment_config)
 
-    set_seed(SEED)
+    with tee_run_log(model_dir / "run.log"):
+        run_training(args=args, feature_path=feature_path, model_dir=model_dir, experiment_id=experiment_id, initial_experiment_config=initial_experiment_config)
+
+
+def run_training(
+    *,
+    args: argparse.Namespace,
+    feature_path: Path,
+    model_dir: Path,
+    experiment_id: str | None,
+    initial_experiment_config: dict,
+) -> None:
+
+    seed = set_seed(args.seed)
     df = load_training_frame(feature_path)
-    df = add_training_target(df, args.target_mode)
+    df = add_training_target(
+        df,
+        args.target_mode,
+        topk_top5_weight=args.topk_top5_weight,
+        topk_top10_weight=args.topk_top10_weight,
+        topk_rank_pct_floor=args.topk_rank_pct_floor,
+        topk_rank_floor_weight=args.topk_rank_floor_weight,
+        topk_focus_k=args.topk_focus_k,
+        topk_gamma=args.topk_gamma,
+    )
     feature_columns = resolve_feature_columns(args.feature_set)
 
     fold_metrics, walk_forward_predictions, walk_forward_backend = run_walk_forward(
-        df, feature_columns, args.valid_dates, args.num_folds, args.model_family
+        df, feature_columns, args.valid_dates, args.num_folds, args.model_family, seed=seed
     )
     metric_summary = summarise_metrics(fold_metrics)
     diagnostic_prediction_df = merge_prediction_with_features(
@@ -647,13 +743,19 @@ def main() -> None:
         config=build_analysis_config(profile_name="walk_forward_default"),
     )
 
-    final_model, final_backend = fit_final_model(df, feature_columns, args.model_family)
+    final_model, final_backend = fit_final_model(df, feature_columns, args.model_family, seed=seed)
     model_path = model_dir / "baseline_model.pkl"
     joblib.dump(final_model, model_path)
 
     pd.DataFrame(fold_metrics).to_csv(
         model_dir / "walk_forward_metrics.csv", index=False, encoding="utf-8-sig"
     )
+    if experiment_id:
+        write_training_metric_exports(
+            experiment_dir=model_dir,
+            fold_metrics=fold_metrics,
+            metric_summary=metric_summary,
+        )
     walk_forward_predictions.to_csv(
         model_dir / "walk_forward_predictions.csv", index=False, encoding="utf-8-sig"
     )
@@ -679,15 +781,30 @@ def main() -> None:
     fold_daily_diagnostics_df.to_csv(
         model_dir / "fold_daily_diagnostics.csv", index=False, encoding="utf-8-sig"
     )
+    stability_row = append_experiment_rank_stability(
+        experiment_name=f"train_{args.feature_set}_{walk_forward_backend}",
+        prediction_path=model_dir / "walk_forward_predictions.csv",
+        fold_diagnostics_path=model_dir / "fold_diagnostics.csv",
+        fold_daily_diagnostics_path=model_dir / "fold_daily_diagnostics.csv",
+        extra_fields={
+            "model_dir": str(model_dir),
+            "feature_set": args.feature_set,
+            "target_mode": args.target_mode,
+            "model_family": final_backend,
+            "seed": int(seed),
+        },
+    )
 
     metadata = {
         "status": "trained",
+        "experiment_id": experiment_id,
         "best_profile_name": BEST_PROFILE_NAME,
         "default_submission_profile": {
             "profile_name": BEST_CONFIG["profile_name"],
             "feature_set": BEST_CONFIG["training"]["feature_set"],
             "target_mode": BEST_CONFIG["training"]["target_mode"],
             "model_family": BEST_CONFIG["training"]["model_family"],
+            "seed": int(BEST_CONFIG["training"].get("seed", SEED)),
             "sort_strategy": BEST_CONFIG["selection"]["sort_strategy"],
             "weighting_scheme": BEST_CONFIG["selection"]["weighting_scheme"],
             "top_k": int(BEST_CONFIG["selection"]["top_k"]),
@@ -705,7 +822,7 @@ def main() -> None:
         "raw_label_column": RAW_LABEL_COLUMN,
         "model_label_column": MODEL_LABEL_COLUMN,
         "target_mode": args.target_mode,
-        "seed": SEED,
+        "seed": seed,
         "valid_dates": args.valid_dates,
         "num_folds": args.num_folds,
         "train_rows_full": int(len(df)),
@@ -714,6 +831,7 @@ def main() -> None:
             str(df["date"].max().date()),
         ],
         "walk_forward_summary": metric_summary,
+        "rank_stability_summary": stability_row,
         "walk_forward_folds": fold_metrics,
         "walk_forward_fold_prediction_files": [path.name for path in fold_prediction_paths],
         "walk_forward_diagnostics_profile": "walk_forward_default",
@@ -722,11 +840,39 @@ def main() -> None:
         json.dumps(metadata, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    if experiment_id:
+        write_experiment_config(
+            model_dir,
+            {
+                **initial_experiment_config,
+                "status": "trained",
+                "backend": final_backend,
+                "walk_forward_backend": walk_forward_backend,
+                "model_path": str(model_path),
+                "feature_columns": feature_columns,
+                "train_rows_full": int(len(df)),
+                "train_date_range_full": metadata["train_date_range_full"],
+                "walk_forward_summary": metric_summary,
+                "rank_stability_summary": stability_row,
+                "topk_weight_config": {
+                    "top5_weight": float(args.topk_top5_weight),
+                    "top10_weight": float(args.topk_top10_weight),
+                    "rank_pct_floor": float(args.topk_rank_pct_floor),
+                    "rank_floor_weight": float(args.topk_rank_floor_weight),
+                    "focus_k": int(args.topk_focus_k),
+                    "gamma": float(args.topk_gamma),
+                },
+            },
+        )
 
     print(f"[train] backend={final_backend}")
+    if experiment_id:
+        print(f"[train] experiment_id={experiment_id}")
+        print(f"[train] experiment_dir={model_dir}")
     print(f"[train] requested_model_family={args.model_family}")
     print(f"[train] feature_set={args.feature_set}")
     print(f"[train] target_mode={args.target_mode}")
+    print(f"[train] seed={seed}")
     print(f"[train] feature_count={len(feature_columns)}")
     print(f"[train] train_rows_full={len(df)}")
     print(

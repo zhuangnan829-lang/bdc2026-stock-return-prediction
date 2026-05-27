@@ -3,27 +3,10 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $appRoot = $scriptDir
-$codeRoot = Join-Path $appRoot "code"
-$srcRoot = Join-Path $codeRoot "src"
+$srcRoot = Join-Path $appRoot "code\src"
 $pythonBin = if ($env:PYTHON_BIN) { $env:PYTHON_BIN } else { "python" }
-$resultPath = Join-Path $appRoot "output\result.csv"
 
-Write-Host "[freeze_submission.ps1] sync submission config..."
-& $pythonBin (Join-Path $srcRoot "sync_submission_config.py")
+Write-Host "[freeze_submission] compare config consistency before freeze..."
+& $pythonBin (Join-Path $srcRoot "compare_config_consistency.py")
 
-Write-Host "[freeze_submission.ps1] run inference..."
-& powershell -ExecutionPolicy Bypass -File (Join-Path $appRoot "test.ps1")
-
-Write-Host "[freeze_submission.ps1] validate result.csv..."
-& $pythonBin (Join-Path $srcRoot "result_validator.py") `
-    --result_path $resultPath
-
-Write-Host "[freeze_submission.ps1] run pre-submit check..."
-& $pythonBin (Join-Path $srcRoot "pre_submit_check.py") `
-    --root_dir . `
-    --result_path "app/output/result.csv"
-
-Write-Host "[freeze_submission.ps1] refresh case comparison..."
-& $pythonBin (Join-Path $srcRoot "build_case_program_comparison.py")
-
-Write-Host "[freeze_submission.ps1] submission freeze pipeline completed."
+& $pythonBin (Join-Path $srcRoot "cli.py") --app-root $appRoot freeze @args

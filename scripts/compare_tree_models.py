@@ -20,7 +20,7 @@ DEFAULT_OUTPUT_DIR = "app/model/model_comparison"
 DEFAULT_VALID_DATES = 20
 DEFAULT_NUM_FOLDS = 3
 DEFAULT_TARGET_MODE = "cross_section_rank"
-DEFAULT_FEATURE_SET = "base_technical_risk"
+DEFAULT_FEATURE_SET = "base_alpha_v3_rs_crowding_mini4"
 
 
 def parse_args() -> argparse.Namespace:

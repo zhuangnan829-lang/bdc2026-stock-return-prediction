@@ -25,6 +25,8 @@ DEFAULT_TURNOVER_RATE_UPPER_PCT = DEFAULTS["turnover_rate_upper_pct"]
 DEFAULT_TURNOVER_RATIO_UPPER_PCT = DEFAULTS["turnover_ratio_upper_pct"]
 DEFAULT_RISK_PENALTY_WEIGHT = DEFAULTS["risk_penalty_weight"]
 DEFAULT_WEIGHTING_SCHEME = DEFAULTS["weighting_scheme"]
+DEFAULT_WEIGHT_BLEND_ALPHA = DEFAULTS["weight_blend_alpha"]
+DEFAULT_MAX_SINGLE_WEIGHT = DEFAULTS["max_single_weight"]
 DEFAULT_MAX_TURNOVER = DEFAULTS["max_turnover"]
 DEFAULT_SORT_STRATEGY = DEFAULTS["sort_strategy"]
 
@@ -50,9 +52,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--weighting_scheme",
-        choices=["equal", "pred", "risk_adjusted"],
+        choices=["equal", "pred", "risk_adjusted", "pred_equal_blend"],
         default=DEFAULT_WEIGHTING_SCHEME,
     )
+    parser.add_argument("--weight_blend_alpha", type=float, default=DEFAULT_WEIGHT_BLEND_ALPHA)
+    parser.add_argument("--max_single_weight", type=float, default=DEFAULT_MAX_SINGLE_WEIGHT)
     parser.add_argument("--previous_result_path")
     parser.add_argument("--max_turnover", type=float, default=DEFAULT_MAX_TURNOVER)
     parser.add_argument("--rerank_signal_column")
@@ -121,7 +125,13 @@ def main() -> None:
         allow_cash_fallback=False,
     )
 
-    weighted = build_portfolio_weights(selected, top_k=args.top_k, weighting_scheme=args.weighting_scheme)
+    weighted = build_portfolio_weights(
+        selected,
+        top_k=args.top_k,
+        weighting_scheme=args.weighting_scheme,
+        max_single_weight=args.max_single_weight,
+        weight_blend_alpha=args.weight_blend_alpha,
+    )
     target_weights = dict(zip(weighted["stock_id"], weighted["weight"]))
 
     previous_weights: dict[str, float] = {}
@@ -152,7 +162,7 @@ def main() -> None:
     validate_result(result)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    result.to_csv(output_path, index=False, encoding="utf-8")
+    result.to_csv(output_path, index=False, encoding="utf-8", lineterminator="\n")
 
     if args.debug_candidates_path:
         debug_path = Path(args.debug_candidates_path)
@@ -174,6 +184,8 @@ def main() -> None:
     print(f"[test] diagnostics={diagnostics}")
     print(
         f"[test] weighting_scheme={args.weighting_scheme} "
+        f"weight_blend_alpha={args.weight_blend_alpha:.6f} "
+        f"max_single_weight={args.max_single_weight:.6f} "
         f"sort_strategy={args.sort_strategy} "
         f"rerank_signal_column={args.rerank_signal_column or 'none'} "
         f"rerank_signal_weight={args.rerank_signal_weight:.6f} "

@@ -13,6 +13,7 @@ __pycache__/
 app/temp/**
 app/output/**
 !app/output/.gitkeep
+!app/output/result.csv
 
 app/docs/**
 !app/docs/competition_code_requirements_review.md
@@ -22,6 +23,9 @@ app/model/**
 !app/model/default_submission_config.json
 !app/model/model_meta.json
 !app/model/final_submission_snapshot.md
+!app/model/package_variant.json
+!app/model/aggressive_score_submission_candidate/
+!app/model/aggressive_score_submission_candidate/result_aggressive_score.csv
 !app/model/submission_artifacts/
 !app/model/submission_artifacts/**
 

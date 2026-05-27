@@ -13,6 +13,7 @@ if str(SRC_ROOT) not in sys.path:
 import backtest as backtest_module
 import train as train_module
 from config import BEST_CONFIG
+from evaluate_rank_stability import append_stability_summary, summarize_prediction_rank_stability
 
 
 DEFAULT_FEATURE_PATH = "app/temp/train_features.csv"
@@ -96,6 +97,14 @@ def run_backtest_summary(prediction_df: pd.DataFrame, profile: dict, prediction_
     return summary_df.iloc[0].to_dict()
 
 
+def summarize_ablation_stability(prediction_df: pd.DataFrame, experiment_name: str, extra_fields: dict) -> dict:
+    return summarize_prediction_rank_stability(
+        prediction_df=prediction_df,
+        experiment_name=experiment_name,
+        extra_fields=extra_fields,
+    )
+
+
 def main() -> None:
     args = parse_args()
     feature_path = ROOT / args.feature_path
@@ -134,6 +143,16 @@ def main() -> None:
             profile=profile,
             prediction_source=f"walk_forward_{feature_set}",
         )
+        stability_summary = summarize_ablation_stability(
+            prediction_df=walk_predictions,
+            experiment_name=f"ablation/feature_{variant_name}",
+            extra_fields={
+                "ablation_type": "feature",
+                "variant": variant_name,
+                "feature_set": feature_set,
+            },
+        )
+        append_stability_summary({**stability_summary, **backtest_summary})
         rows.append(
             {
                 "ablation_type": "feature",
@@ -145,6 +164,8 @@ def main() -> None:
                 "max_turnover": profile["max_turnover"],
                 "backend": backend,
                 **train_summary,
+                "worst_fold_rank_ic": stability_summary["worst_fold_rank_ic"],
+                "negative_day_rank_ic_ratio": stability_summary["negative_day_rank_ic_ratio"],
                 **backtest_summary,
             }
         )
@@ -163,6 +184,17 @@ def main() -> None:
             profile=profile,
             prediction_source=f"walk_forward_{BEST_CONFIG['training']['feature_set']}",
         )
+        stability_summary = summarize_ablation_stability(
+            prediction_df=full_prediction_df,
+            experiment_name=f"ablation/sort_{sort_strategy}",
+            extra_fields={
+                "ablation_type": "sort_strategy",
+                "variant": sort_strategy,
+                "feature_set": BEST_CONFIG["training"]["feature_set"],
+                "sort_strategy": sort_strategy,
+            },
+        )
+        append_stability_summary({**stability_summary, **backtest_summary})
         rows.append(
             {
                 "ablation_type": "sort_strategy",
@@ -173,6 +205,10 @@ def main() -> None:
                 "weighting_scheme": profile["weighting_scheme"],
                 "max_turnover": profile["max_turnover"],
                 "backend": "reused_full_feature_predictions",
+                "rank_ic_mean": stability_summary["rank_ic_mean"],
+                "rank_ic_std": stability_summary["rank_ic_std"],
+                "worst_fold_rank_ic": stability_summary["worst_fold_rank_ic"],
+                "negative_day_rank_ic_ratio": stability_summary["negative_day_rank_ic_ratio"],
                 **backtest_summary,
             }
         )
@@ -188,6 +224,17 @@ def main() -> None:
             profile=profile,
             prediction_source=f"walk_forward_{BEST_CONFIG['training']['feature_set']}",
         )
+        stability_summary = summarize_ablation_stability(
+            prediction_df=full_prediction_df,
+            experiment_name=f"ablation/weight_{weighting_scheme}",
+            extra_fields={
+                "ablation_type": "weighting",
+                "variant": weighting_scheme,
+                "feature_set": BEST_CONFIG["training"]["feature_set"],
+                "weighting_scheme": weighting_scheme,
+            },
+        )
+        append_stability_summary({**stability_summary, **backtest_summary})
         rows.append(
             {
                 "ablation_type": "weighting",
@@ -198,6 +245,10 @@ def main() -> None:
                 "weighting_scheme": weighting_scheme,
                 "max_turnover": profile["max_turnover"],
                 "backend": "reused_full_feature_predictions",
+                "rank_ic_mean": stability_summary["rank_ic_mean"],
+                "rank_ic_std": stability_summary["rank_ic_std"],
+                "worst_fold_rank_ic": stability_summary["worst_fold_rank_ic"],
+                "negative_day_rank_ic_ratio": stability_summary["negative_day_rank_ic_ratio"],
                 **backtest_summary,
             }
         )
@@ -214,6 +265,17 @@ def main() -> None:
             profile=profile,
             prediction_source=f"walk_forward_{BEST_CONFIG['training']['feature_set']}",
         )
+        stability_summary = summarize_ablation_stability(
+            prediction_df=full_prediction_df,
+            experiment_name=f"ablation/turnover_{str(max_turnover).replace('.', '_')}",
+            extra_fields={
+                "ablation_type": "turnover",
+                "variant": f"max_turnover_{max_turnover}",
+                "feature_set": BEST_CONFIG["training"]["feature_set"],
+                "max_turnover": max_turnover,
+            },
+        )
+        append_stability_summary({**stability_summary, **backtest_summary})
         rows.append(
             {
                 "ablation_type": "turnover",
@@ -224,6 +286,10 @@ def main() -> None:
                 "weighting_scheme": profile["weighting_scheme"],
                 "max_turnover": max_turnover,
                 "backend": "reused_full_feature_predictions",
+                "rank_ic_mean": stability_summary["rank_ic_mean"],
+                "rank_ic_std": stability_summary["rank_ic_std"],
+                "worst_fold_rank_ic": stability_summary["worst_fold_rank_ic"],
+                "negative_day_rank_ic_ratio": stability_summary["negative_day_rank_ic_ratio"],
                 **backtest_summary,
             }
         )
@@ -236,6 +302,9 @@ def main() -> None:
         "feature_count",
         "backend",
         "rank_ic_mean",
+        "rank_ic_std",
+        "worst_fold_rank_ic",
+        "negative_day_rank_ic_ratio",
         "top5_mean_return_mean",
         "cumulative_return_after_cost",
         "sharpe_after_cost",
@@ -255,8 +324,14 @@ def main() -> None:
 
     best_by_group = (
         result_df.sort_values(
-            ["ablation_type", "cumulative_return_after_cost", "sharpe_after_cost", "avg_turnover"],
-            ascending=[True, False, False, True],
+            [
+                "ablation_type",
+                "worst_fold_rank_ic",
+                "negative_day_rank_ic_ratio",
+                "cumulative_return_after_cost",
+                "sharpe_after_cost",
+            ],
+            ascending=[True, False, True, False, False],
         )
         .groupby("ablation_type", as_index=False)
         .head(1)
@@ -265,8 +340,14 @@ def main() -> None:
     best_by_group.to_csv(best_path, index=False, encoding="utf-8-sig")
 
     ranked = result_df.sort_values(
-        ["ablation_type", "cumulative_return_after_cost", "sharpe_after_cost", "avg_turnover"],
-        ascending=[True, False, False, True],
+        [
+            "ablation_type",
+            "worst_fold_rank_ic",
+            "negative_day_rank_ic_ratio",
+            "cumulative_return_after_cost",
+            "sharpe_after_cost",
+        ],
+        ascending=[True, False, True, False, False],
     ).copy()
     ranked["is_group_winner"] = ranked.groupby("ablation_type").cumcount() == 0
     report_lines = [
@@ -274,15 +355,16 @@ def main() -> None:
         "",
         "## Winners By Group",
         "",
-        "| ablation_type | variant | cum_after_cost | sharpe_after_cost | avg_turnover | winner |",
-        "|---|---|---:|---:|---:|---|",
+        "| ablation_type | variant | worst_fold_rank_ic | negative_day_rank_ic_ratio | cum_after_cost | sharpe_after_cost | winner |",
+        "|---|---|---:|---:|---:|---:|---|",
     ]
     for _, row in ranked.iterrows():
         report_lines.append(
             f"| {row['ablation_type']} | {row['variant']} | "
+            f"{float(row.get('worst_fold_rank_ic', 0.0)):.6f} | "
+            f"{float(row.get('negative_day_rank_ic_ratio', 0.0)):.6f} | "
             f"{float(row.get('cumulative_return_after_cost', 0.0)):.6f} | "
             f"{float(row.get('sharpe_after_cost', 0.0)):.6f} | "
-            f"{float(row.get('avg_turnover', 0.0)):.6f} | "
             f"{'yes' if bool(row['is_group_winner']) else 'no'} |"
         )
     report_path = output_dir / "ablation_report.md"
