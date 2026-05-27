@@ -254,13 +254,11 @@ def main() -> None:
                 zf.write(path, path.relative_to(OUT_ROOT))
 
     sha256 = file_hash(zip_path, "sha256")
-    checksum_file = stage / "交付包SHA256.txt"
+    checksum_file = zip_path.with_suffix(".sha256.txt")
     checksum_file.write_text(
         f"{zip_path.name}\nsha256={sha256}\nsize_bytes={zip_path.stat().st_size}\n",
         encoding="utf-8",
     )
-    with zipfile.ZipFile(zip_path, "a", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
-        zf.write(checksum_file, checksum_file.relative_to(OUT_ROOT))
 
     print(f"stage={stage}")
     print(f"zip={zip_path}")
