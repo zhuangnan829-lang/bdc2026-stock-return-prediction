@@ -24,6 +24,9 @@ EXCLUDE_PREFIXES = (
     "_online/",
     "_online_package/",
     "_work_package/",
+    "app/model/alpha_v4_micro_ablation/",
+    "app/model/alpha_v4_rewrite_v2_experiment/",
+    "app/model/lstm_search/",
     "dist/",
 )
 EXCLUDE_SUFFIXES = (".ppt", ".pptx", ".key")
