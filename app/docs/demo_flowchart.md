@@ -1,4 +1,4 @@
-.# Demo 流程图
+# Demo 流程图
 
 ```text
                 [原始行情 / 历史数据]
@@ -24,6 +24,9 @@
                            |
                            v
                 [正式推理 / 冻结模型产物]
+                           |
+                           v
+              [aggressive 变体结果同步]
                            |
                            v
                 [freeze_submission.sh]

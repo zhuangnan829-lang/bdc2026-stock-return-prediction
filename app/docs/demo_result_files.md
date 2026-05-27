@@ -24,7 +24,7 @@
 
 现场讲法：
 
-> 这是最终提交给比赛平台的核心文件，也是正式推理链路的直接输出。
+> 这是最终提交给比赛平台的核心文件。当前包会先运行默认 LSTM 冻结推理，再按 `aggressive_score_submission` 变体同步为最终提交结果。
 
 ## 3. 模型对比结果
 
@@ -42,7 +42,7 @@
 ## 4. 市场阶段分析结果
 
 ### `app/model/market_regime_analysis/fold_stage_performance.csv`
-### `app/model/market_regime_analysis/rule_stage_performance.csv`
+### `app/model/market_regime_analysis/market_regime_report.md`
 
 作用：
 
@@ -71,4 +71,4 @@
 
 1. `app/output/result.csv`
 2. `app/model/formal_model_comparison/formal_model_comparison.md`
-3. `app/model/market_regime_analysis/market_regime_analysis.md`
+3. `app/model/final_submission_snapshot.md`

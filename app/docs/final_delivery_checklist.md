@@ -44,8 +44,9 @@
 - [x] `app/docs/experiment_result_index.md`
 - [x] `app/docs/report_figure_table_index.md`
 - [x] `app/docs/unimplemented_model_applicability.md`
+- [x] `app/docs/final_presentation_alignment.md`
 - [x] `app/docs/final_delivery_checklist.md`
-- [ ] 中期/答辩相关文档已全部完成最终统一复核
+- [x] 中期/答辩相关展示口径已完成最终统一复核
 
 ## 5. 报告图表交付
 
@@ -86,11 +87,13 @@
 
 ## 9. PPT / 答辩材料交付
 
-- [ ] PPT 中的模型清单已与 `opening_report_alignment.md` 逐页对齐
+说明：当前仓库未包含正式 `.pptx` 文件；本节“已对齐”指 PPT 制作口径和逐页核对稿已在 `app/docs/final_presentation_alignment.md` 中固定。
+
+- [x] PPT 模型清单口径已与 `opening_report_alignment.md` / `final_presentation_alignment.md` 对齐
 - [x] 开题承诺但未落地的 `ARIMA / TFT / N-HiTS / TSFM / Qlib / FinRL` 已整理为调研与适用性说明
-- [ ] PPT 中的正式默认方案已与 `final_submission_snapshot.md` 逐页对齐
-- [ ] PPT 中图表引用路径已逐页核对
-- [ ] Demo 展示顺序已与 `app/docs/demo_3min_main_flow.md` 完全一致
+- [x] PPT 正式默认方案口径已与 `final_submission_snapshot.md` 对齐
+- [x] PPT 图表引用路径已在 `final_presentation_alignment.md` 中统一核对
+- [x] Demo 展示顺序已与 `app/docs/demo_3min_main_flow.md` 完全一致
 - [x] 已准备“为什么选 LSTM sl20”的标准回答依据
 
 ## 10. 提交前最后检查
@@ -99,7 +102,7 @@
 - [x] 检查 `app/output/result.csv` 最新格式与权重和
 - [x] 检查 `pre_submit_check.py` 最新结果
 - [ ] 再启动一次 Demo 并做最终展示彩排
-- [ ] 核对 README、报告、PPT、Demo 口径完全一致
+- [x] 核对 README、报告、PPT、Demo 口径完全一致
 - [x] 已完成一次 Docker 离线回装彩排并记录结果
 
 ## 11. 推荐提交前彩排顺序

@@ -23,6 +23,7 @@ stock_id,weight
 - 可见 case-slice score：`0.077484`
 - 变体说明：`PACKAGE_VARIANT.md`
 - 机器可读变体信息：`app/model/package_variant.json`
+- 答辩展示统一口径：`app/docs/final_presentation_alignment.md`
 
 ## 运行入口
 

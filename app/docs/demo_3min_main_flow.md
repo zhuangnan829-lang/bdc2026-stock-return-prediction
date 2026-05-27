@@ -8,7 +8,8 @@
 2. 训练 / 推理
 3. 回测
 4. 冻结提交
-5. Docker 入口
+5. aggressive 变体同步
+6. Docker 入口
 
 ## 固定演示顺序
 
@@ -41,7 +42,7 @@
 
 一句话讲法：
 
-> 正式入口默认不再现场训练，而是直接使用冻结好的模型做正式推理，避免提交时出现“训练漂移”。
+> 正式入口默认不再现场训练，而是先使用冻结好的 LSTM 模型做推理，再按当前 aggressive 提交变体同步最终 `result.csv`，避免提交时出现训练漂移和结果口径漂移。
 
 ### Step 4. 冻结提交流程
 
@@ -72,7 +73,7 @@
 
 ### 第 2 分钟：讲正式推理与冻结提交
 
-> 当模型方案确定后，我们不再把“训练”和“正式提交”混在一起。正式入口 `run_submission.sh` 默认直接使用冻结模型推理生成 `result.csv`。如果要准备最终提交包，就执行 `freeze_submission.sh`，它会自动做结果校验和提交前检查。
+> 当模型方案确定后，我们不再把“训练”和“正式提交”混在一起。正式入口 `run_submission.sh` 默认使用冻结模型推理，并在检测到 `aggressive_score_submission` 后同步最终满仓结果。如果要准备最终提交包，就执行 `freeze_submission.sh`，它会自动做结果校验和提交前检查。
 
 ### 第 3 分钟：讲 Docker 与产物
 
@@ -86,4 +87,5 @@
 2. `app/docs/demo_key_commands.md`
 3. `app/docs/demo_result_files.md`
 4. `app/model/formal_model_comparison/formal_model_comparison.md`
-5. `app/model/market_regime_analysis/market_regime_analysis.md`
+5. `app/model/final_submission_snapshot.md`
+6. `app/model/docker_consistency_check.md`
