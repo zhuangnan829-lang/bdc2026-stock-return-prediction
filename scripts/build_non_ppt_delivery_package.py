@@ -31,6 +31,71 @@ EXCLUDE_PREFIXES = (
 )
 EXCLUDE_SUFFIXES = (".ppt", ".pptx", ".key")
 
+ROOT_INCLUDE_FILES = {
+    ".dockerignore",
+    ".gitignore",
+    "2026大数据挑战赛-代码规范.txt",
+    "2026大数据挑战赛-赛题描述.txt",
+    "Dockerfile",
+    "PACKAGE_VARIANT.md",
+    "README.md",
+    "docker-compose.yml",
+    "pytest.ini",
+    "requirements.txt",
+}
+
+CORE_INCLUDE_PREFIXES = (
+    ".github/",
+    "app/code/",
+    "app/data/",
+    "app/demo/",
+    "app/docs/",
+    "app/output/",
+    "scripts/",
+    "test/output/",
+    "tests/",
+)
+
+MODEL_INCLUDE_PREFIXES = (
+    "app/model/configs/",
+    "app/model/submission_artifacts/",
+    "app/model/formal_model_comparison/",
+    "app/model/final_candidate_check/",
+    "app/model/final_candidate_decision/",
+    "app/model/final_process_summary/",
+    "app/model/model_comparison/",
+    "app/model/report_materials/",
+    "app/model/transformer_lite/",
+    "app/model/transformer_lite_sl60/",
+    "app/model/lstm_baseline/",
+    "app/model/xgboost_baseline/",
+    "app/model/baseline_lightgbm_same_protocol/",
+    "app/model/baseline_linear_same_protocol/",
+    "app/model/feature_set_reports/",
+    "app/model/feature_set_comparison/",
+    "app/model/backtest_same_protocol/",
+    "app/model/market_regime_analysis/",
+    "app/model/performance_bottleneck/",
+    "app/model/ablation/",
+    "app/model/stability_eval/",
+)
+
+
+def should_include(rel: str) -> bool:
+    norm = rel.replace("\\", "/")
+    if norm.startswith(EXCLUDE_PREFIXES):
+        return False
+    if norm.lower().endswith(EXCLUDE_SUFFIXES):
+        return False
+    if "/" not in norm:
+        return norm in ROOT_INCLUDE_FILES
+    if norm.startswith("app/model/"):
+        # Include final model files and curated evidence directories, but skip old grid-search workdirs.
+        if norm.count("/") == 2:
+            return True
+        return norm.startswith(MODEL_INCLUDE_PREFIXES)
+    return norm.startswith(CORE_INCLUDE_PREFIXES)
+
 
 def run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
@@ -60,9 +125,7 @@ def copy_tracked_project_files(project_dir: Path) -> int:
     copied = 0
     for rel in tracked:
         norm = rel.replace("\\", "/")
-        if norm.startswith(EXCLUDE_PREFIXES):
-            continue
-        if norm.lower().endswith(EXCLUDE_SUFFIXES):
+        if not should_include(norm):
             continue
         src = REPO_ROOT / rel
         if not src.is_file():
