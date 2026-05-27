@@ -66,7 +66,10 @@ def copy_tracked_project_files(project_dir: Path) -> int:
             continue
         dst = project_dir / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
+        try:
+            shutil.copy2(src, dst)
+        except OSError as exc:
+            raise OSError(f"failed to copy tracked file {rel!r} to {dst}") from exc
         copied += 1
     return copied
 
@@ -141,7 +144,7 @@ stock_id,weight
 
 def main() -> None:
     stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    package_name = f"沪深300收益预测组合推荐_非PPT交付包_{stamp}"
+    package_name = f"non_ppt_delivery_{stamp}"
     stage = OUT_ROOT / package_name
     zip_path = OUT_ROOT / f"{package_name}.zip"
 
