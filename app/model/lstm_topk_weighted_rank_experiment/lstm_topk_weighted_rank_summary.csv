@@ -1,3 +1,0 @@
-﻿label,target_mode,sample_weight_mode,rank_ic_mean,top5_mean_return_mean,cumulative_return_after_cost,sharpe_after_cost,max_drawdown_after_cost,avg_turnover,delta_rank_ic_mean,delta_top5_mean_return_mean,delta_cumulative_return_after_cost,delta_sharpe_after_cost,delta_max_drawdown_after_cost
-baseline_cross_section_rank,cross_section_rank,uniform,0.01168002338745768,0.010118703963325768,0.935571619432464,3.6295252848094974,-0.0428936280873258,0.7612811507926904,0.0,0.0,0.0,0.0,0.0
-candidate_topk_weighted_rank,topk_weighted_rank,topk_head_weighted,0.02632196375494796,0.004902834422001903,0.9211152975978864,3.1124507668744203,-0.0823373635983718,0.7608728589650731,0.014641940367490279,-0.005215869541323865,-0.014456321834577679,-0.5170745179350771,-0.03944373551104599

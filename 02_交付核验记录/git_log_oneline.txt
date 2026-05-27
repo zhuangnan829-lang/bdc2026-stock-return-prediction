@@ -1,0 +1,19 @@
+$ git log --oneline -n 20
+exit_code=0
+
+a9c4058 Fix delivery package checksum output
+2430595 Curate non-PPT delivery package contents
+8fd03f8 Exclude deep experiment workdirs from delivery package
+944c5a6 Shorten delivery package path
+ce974e4 Add non-PPT delivery package builder
+618fd5a Add final project report
+b305193 Improve project README for final review
+fec4224 Unify final presentation narrative
+a75290d Explain deferred model and framework scope
+d861f1a Record model evidence and frozen results
+05bfa15 Document delivery evidence and demo flow
+97bd9f9 Build reproducible submission pipeline
+338909c Add CI and regression tests
+4e74e36 Refine README wording for submission
+a83c9ba Delete 项目完善修改添加建议报告_第三文档完善版.docx
+ebfc3de Initial commit

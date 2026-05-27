@@ -1,0 +1,8 @@
+$ D:\456\python.exe app/code/src/result_validator.py --result_path app/output/result.csv
+exit_code=0
+
+[result_validator] path=app\output\result.csv
+[result_validator] encoding=utf-8 rows=5 weight_sum=1.000000
+[result_validator] stock_ids=['000792', '600233', '601669', '600930', '002463']
+[result_validator] weights=[0.2, 0.2, 0.2, 0.1999999999999999, 0.1999999999999999]
+[result_validator] validation passed

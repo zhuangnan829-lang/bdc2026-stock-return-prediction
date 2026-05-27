@@ -1,3 +1,0 @@
-﻿label,feature_set,feature_count,rank_ic_mean,top5_mean_return_mean,cumulative_return_after_cost,sharpe_after_cost,max_drawdown_after_cost,avg_turnover,score_self_case_slice
-current_mini4_default,base_alpha_v3_rs_crowding_mini4,20,0.01168002338745768,0.010118703963325768,0.935571619432464,3.6295252848094974,-0.0428936280873258,0.7612811507926904,-0.015835041565090434
-mini4_plus_alpha_v4_micro,base_alpha_v3_rs_crowding_mini4_alpha_v4_micro,24,0.044142030167099,0.01376977585709314,0.6014342589037605,3.94866713138338,-0.0542702249349218,0.7776703685446241,0.006276093454130679

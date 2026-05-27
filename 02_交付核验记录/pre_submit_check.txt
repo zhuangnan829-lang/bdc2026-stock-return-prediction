@@ -1,0 +1,10 @@
+$ D:\456\python.exe app/code/src/pre_submit_check.py
+exit_code=0
+
+[pre_submit_check] root_dir=D:\Desktop\��Ʊ����Ԥ�����
+[pre_submit_check] best_config_path=D:\Desktop\��Ʊ����Ԥ�����\app\model\best_config.json
+[pre_submit_check] required_files_ok=8
+[pre_submit_check] result_ok rows=5 weight_sum=1.000000 encoding=utf-8
+[pre_submit_check] config_consistency_ok=58
+[pre_submit_check] resolved_model_path=D:\Desktop\��Ʊ����Ԥ�����\app\model\submission_artifacts\lstm_model.pt
+[pre_submit_check] all checks passed
