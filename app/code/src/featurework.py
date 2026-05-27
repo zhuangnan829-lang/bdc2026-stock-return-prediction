@@ -34,9 +34,13 @@ NUMERIC_COLUMNS = [
 
 FEATURE_COLUMNS = [
     "ret_1d",
+    "ret_2d",
     "ret_3d",
     "ret_5d",
+    "ret_7d",
     "ret_10d",
+    "ret_15d",
+    "ret_20d",
     "mom_5d",
     "mom_10d",
     "intraday_return",
@@ -57,6 +61,7 @@ FEATURE_COLUMNS = [
     "volume_ratio_10d",
     "amount_change_1d",
     "amount_ratio_5d",
+    "amount_ratio_10d",
     "turnover_mean_5d",
     "turnover_mean_10d",
     "turnover_mean_20d",
@@ -112,6 +117,80 @@ FEATURE_COLUMNS = [
     "trend_persistence_score_10d_v2",
     "volatility_compression_breakout_20d",
     "crowding_reversal_risk_5d",
+    "close_position_10d",
+    "close_position_20d",
+    "ret_1d_zscore_cross_section",
+    "ret_3d_zscore_cross_section",
+    "volume_spike_zscore",
+    "turnover_spike_zscore",
+    "overheat_score",
+    "reversal_risk_score",
+    "relative_to_market_5d",
+    "relative_to_market_10d",
+]
+
+BASE_ALPHA_V4_MEDIUM_COLUMNS = [
+    # Medium feature bundle: keep the search space interpretable and below the
+    # high-dimensional reference case while covering the main alpha families.
+    "ret_1d",
+    "ret_2d",
+    "ret_3d",
+    "ret_5d",
+    "ret_7d",
+    "ret_10d",
+    "mom_5d",
+    "mom_10d",
+    "intraday_return",
+    "range_pct",
+    "close_to_high",
+    "close_to_low",
+    "close_to_ma_5d",
+    "close_to_ma_10d",
+    "close_to_ma_20d",
+    "volatility_5d",
+    "volatility_10d",
+    "volatility_20d",
+    "volatility_ratio_5_10",
+    "volatility_ratio_10_20",
+    "volume_change_1d",
+    "volume_ratio_5d",
+    "volume_ratio_10d",
+    "amount_ratio_5d",
+    "amount_ratio_10d",
+    "turnover_mean_5d",
+    "turnover_mean_10d",
+    "turnover_mean_20d",
+    "turnover_change_1d",
+    "turnover_ratio_5d",
+    "amplitude_mean_5d",
+    "amplitude_ratio_5d",
+    "risk_adjusted_mom_5d",
+    "risk_adjusted_mom_10d",
+    "rank_ret_1d",
+    "rank_ret_5d",
+    "rank_mom_5d",
+    "rank_close_to_ma_10d",
+    "rank_turnover_rate",
+    "rel_ret_1d",
+    "rel_ret_5d",
+    "rel_mom_10d",
+    "rank_rel_ret_5d",
+    "ret_1d_zscore_cross_section",
+    "ret_3d_zscore_cross_section",
+    "rel_hs300_mean_ret_5d",
+    "relative_to_market_5d",
+    "relative_to_market_10d",
+    "rel_cs_mean_close_to_ma_10d",
+    "distance_to_20d_high",
+    "rebound_from_10d_low",
+    "turnover_spike_5d",
+    "volume_spike_zscore",
+    "turnover_spike_zscore",
+    "volume_price_divergence_5d",
+    "crowding_risk_5d",
+    "crowding_reversal_risk_5d",
+    "trend_persistence_score_10d_v2",
+    "volatility_compression_breakout_20d",
 ]
 
 
@@ -140,6 +219,15 @@ def compute_binary_streak(series: pd.Series) -> pd.Series:
             running = 0
         streak.append(running)
     return pd.Series(streak, index=series.index, dtype="float64")
+
+
+def cross_section_zscore(series: pd.Series) -> pd.Series:
+    values = pd.to_numeric(series, errors="coerce")
+    mean = values.mean()
+    std = values.std(ddof=0)
+    if pd.isna(std) or std <= 1e-12:
+        return pd.Series(0.0, index=series.index, dtype="float64")
+    return ((values - mean) / std).clip(lower=-5.0, upper=5.0)
 
 
 def parse_args() -> argparse.Namespace:
@@ -197,7 +285,20 @@ def build_train_features(df: pd.DataFrame) -> pd.DataFrame:
     grouped = out.groupby("stock_id", group_keys=False)
     out["future_open_1"] = grouped["open"].shift(-1)
     out["future_open_5"] = grouped["open"].shift(-5)
-    out["target_return"] = (out["future_open_5"] - out["future_open_1"]) / out["future_open_1"]
+    stock_future_return = (out["future_open_5"] - out["future_open_1"]) / out["future_open_1"]
+    stock_future_return = stock_future_return.replace([float("inf"), float("-inf")], pd.NA)
+    out["original_return"] = stock_future_return
+    out["target_return"] = out["original_return"]
+    out["market_average_future_return"] = out.groupby("date")["original_return"].transform("mean")
+    out["residual_return"] = out["original_return"] - out["market_average_future_return"]
+
+    volatility = pd.to_numeric(out.get("volatility_20d"), errors="coerce").abs()
+    volatility = volatility.clip(lower=1e-4)
+    out["risk_adjusted_return"] = out["original_return"] / (volatility + 1e-12)
+
+    lower = out.groupby("date")["original_return"].transform(lambda s: s.quantile(0.05))
+    upper = out.groupby("date")["original_return"].transform(lambda s: s.quantile(0.95))
+    out["clipped_return"] = out["original_return"].clip(lower=lower, upper=upper)
     return out
 
 
@@ -212,9 +313,13 @@ def add_v2_features(df: pd.DataFrame) -> pd.DataFrame:
     grouped = out.groupby("stock_id", group_keys=False)
 
     out["ret_1d"] = grouped["close"].pct_change(1)
+    out["ret_2d"] = grouped["close"].pct_change(2)
     out["ret_3d"] = grouped["close"].pct_change(3)
     out["ret_5d"] = grouped["close"].pct_change(5)
+    out["ret_7d"] = grouped["close"].pct_change(7)
     out["ret_10d"] = grouped["close"].pct_change(10)
+    out["ret_15d"] = grouped["close"].pct_change(15)
+    out["ret_20d"] = grouped["close"].pct_change(20)
 
     out["mom_5d"] = grouped["close"].pct_change(5)
     out["mom_10d"] = grouped["close"].pct_change(10)
@@ -246,7 +351,9 @@ def add_v2_features(df: pd.DataFrame) -> pd.DataFrame:
     out["volume_ratio_10d"] = out["volume"] / volume_mean_10d - 1.0
     out["amount_change_1d"] = grouped["amount"].pct_change(1)
     amount_mean_5d = grouped["amount"].transform(lambda s: s.rolling(5, min_periods=5).mean())
+    amount_mean_10d = grouped["amount"].transform(lambda s: s.rolling(10, min_periods=10).mean())
     out["amount_ratio_5d"] = out["amount"] / amount_mean_5d - 1.0
+    out["amount_ratio_10d"] = out["amount"] / amount_mean_10d - 1.0
 
     out["turnover_mean_5d"] = grouped["turnover_rate"].transform(lambda s: s.rolling(5, min_periods=5).mean())
     out["turnover_mean_10d"] = grouped["turnover_rate"].transform(lambda s: s.rolling(10, min_periods=10).mean())
@@ -265,10 +372,13 @@ def add_v2_features(df: pd.DataFrame) -> pd.DataFrame:
 
     market_ret_1d = out.groupby("date")["ret_1d"].transform("median")
     market_ret_5d = out.groupby("date")["ret_5d"].transform("median")
+    market_ret_10d = out.groupby("date")["ret_10d"].transform("median")
     market_mom_10d = out.groupby("date")["mom_10d"].transform("median")
     out["rel_ret_1d"] = out["ret_1d"] - market_ret_1d
     out["rel_ret_5d"] = out["ret_5d"] - market_ret_5d
     out["rel_mom_10d"] = out["mom_10d"] - market_mom_10d
+    out["relative_to_market_5d"] = out["ret_5d"] - market_ret_5d
+    out["relative_to_market_10d"] = out["ret_10d"] - market_ret_10d
 
     out["consecutive_up_days"] = grouped["ret_1d"].transform(lambda s: compute_signed_streak(s, positive=True))
     out["consecutive_down_days"] = grouped["ret_1d"].transform(lambda s: compute_signed_streak(s, positive=False))
@@ -295,6 +405,8 @@ def add_v2_features(df: pd.DataFrame) -> pd.DataFrame:
     out["rank_amount_ratio_5d"] = out.groupby("date")["amount_ratio_5d"].rank(pct=True)
     out["rank_rel_ret_5d"] = out.groupby("date")["rel_ret_5d"].rank(pct=True)
     out["volatility_regime_rank"] = out.groupby("date")["volatility_ratio_5_20"].rank(pct=True)
+    out["ret_1d_zscore_cross_section"] = out.groupby("date")["ret_1d"].transform(cross_section_zscore)
+    out["ret_3d_zscore_cross_section"] = out.groupby("date")["ret_3d"].transform(cross_section_zscore)
 
     # Alpha v3: relative strength vs HS300 basket proxy, trend persistence, and crowding/risk state.
     hs300_mean_ret_1d = out.groupby("date")["ret_1d"].transform("mean")
@@ -303,6 +415,10 @@ def add_v2_features(df: pd.DataFrame) -> pd.DataFrame:
     cs_mean_close_to_ma_10d = out.groupby("date")["close_to_ma_10d"].transform("mean")
     prev_high_20d = grouped["high"].transform(lambda s: s.shift(1).rolling(20, min_periods=20).max())
     prev_low_10d = grouped["low"].transform(lambda s: s.shift(1).rolling(10, min_periods=10).min())
+    high_10d = grouped["high"].transform(lambda s: s.rolling(10, min_periods=10).max())
+    low_10d = grouped["low"].transform(lambda s: s.rolling(10, min_periods=10).min())
+    high_20d = grouped["high"].transform(lambda s: s.rolling(20, min_periods=20).max())
+    low_20d = grouped["low"].transform(lambda s: s.rolling(20, min_periods=20).min())
 
     out["rel_hs300_mean_ret_1d"] = out["ret_1d"] - hs300_mean_ret_1d
     out["rel_hs300_mean_ret_5d"] = out["ret_5d"] - hs300_mean_ret_5d
@@ -310,14 +426,26 @@ def add_v2_features(df: pd.DataFrame) -> pd.DataFrame:
     out["rel_cs_mean_close_to_ma_10d"] = out["close_to_ma_10d"] - cs_mean_close_to_ma_10d
 
     out["distance_to_20d_high"] = out["close"] / prev_high_20d - 1.0
+    out["close_position_10d"] = (out["close"] - low_10d) / (high_10d - low_10d + 1e-12)
+    out["close_position_20d"] = (out["close"] - low_20d) / (high_20d - low_20d + 1e-12)
     out["rebound_from_10d_low"] = out["close"] / prev_low_10d - 1.0
     breakout_flag_20d = (out["close"] >= prev_high_20d).astype("float64")
     out["breakout_streak_20d"] = breakout_flag_20d.groupby(out["stock_id"]).transform(compute_binary_streak)
     out["drawdown_recovery_ratio_10d"] = out["rebound_from_10d_low"] / (out["distance_to_20d_high"].abs() + 1e-12)
 
     out["turnover_spike_5d"] = out["turnover_rate"] / (out["turnover_mean_5d"] + 1e-12)
+    out["volume_spike_zscore"] = out.groupby("date")["volume_ratio_5d"].transform(cross_section_zscore)
+    out["turnover_spike_zscore"] = out.groupby("date")["turnover_spike_5d"].transform(cross_section_zscore)
     out["volume_price_divergence_5d"] = out["rank_ret_5d"] - out["rank_volume_change_5d"]
     out["crowding_risk_5d"] = out["turnover_spike_5d"] * (1.0 + out["amplitude_ratio_5d"].clip(lower=0.0))
+    short_return_heat = (
+        0.40 * out["ret_1d_zscore_cross_section"].clip(lower=0.0)
+        + 0.35 * out["ret_3d_zscore_cross_section"].clip(lower=0.0)
+        + 0.25 * out["rank_ret_5d"].fillna(0.5)
+    )
+    volume_heat = out["volume_spike_zscore"].clip(lower=0.0)
+    turnover_heat = out["turnover_spike_zscore"].clip(lower=0.0)
+    out["overheat_score"] = (0.50 * short_return_heat + 0.25 * volume_heat + 0.25 * turnover_heat).clip(lower=0.0, upper=5.0)
     out["volatility_switch_signal"] = out["volatility_5d"] - out["volatility_20d"]
     out["volatility_switch_rank"] = out.groupby("date")["volatility_switch_signal"].rank(pct=True)
 
@@ -361,6 +489,16 @@ def add_v2_features(df: pd.DataFrame) -> pd.DataFrame:
         (1.0 - out["volatility_switch_rank"]) * out["distance_to_20d_high"]
     )
     out["crowding_reversal_risk_5d"] = out["crowding_risk_5d"] * (1.0 - out["rank_ret_5d"])
+    volatility_heat = (
+        0.50 * out["rank_volatility_5d"].fillna(0.5)
+        + 0.50 * out["rank_volatility_20d"].fillna(0.5)
+    )
+    turnover_rank = out.groupby("date")["turnover_rate"].rank(pct=True).fillna(0.5)
+    out["reversal_risk_score"] = (
+        0.45 * out["overheat_score"]
+        + 0.30 * volatility_heat
+        + 0.25 * turnover_rank
+    ).clip(lower=0.0, upper=5.0)
 
     cleaned_features = out[FEATURE_COLUMNS].replace([pd.NA, float("inf"), float("-inf")], pd.NA)
     with pd.option_context("future.no_silent_downcasting", True):
