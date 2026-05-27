@@ -189,6 +189,7 @@ Docker 默认入口为：
 建议展示时以以下文档为准，避免 README、PPT、Demo 和报告口径不一致：
 
 - 展示统一口径：`app/docs/final_presentation_alignment.md`
+- 结题报告：`app/docs/final_project_report.md`
 - 3 分钟 Demo 主流程：`app/docs/demo_3min_main_flow.md`
 - Demo 流程图：`app/docs/demo_flowchart.md`
 - 关键命令页：`app/docs/demo_key_commands.md`
