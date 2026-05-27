@@ -1,0 +1,11 @@
+{
+  "latest_date": "2026-03-13",
+  "latest_regime": "normal_or_low_volatility",
+  "selected_config": "aggressive",
+  "source": "predict_features_latest_date",
+  "market_volatility_20d": 0.02108483984556692,
+  "market_return_20d": 0.00985614267244468,
+  "volatility_threshold_70q": 0.02259514075695275,
+  "range_abs_return_20d_threshold_30q": 0.018577523734584163,
+  "combined_path": ""
+}

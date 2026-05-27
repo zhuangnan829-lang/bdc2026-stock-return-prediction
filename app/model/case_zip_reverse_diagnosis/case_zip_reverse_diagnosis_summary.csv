@@ -1,0 +1,2 @@
+﻿vol20_threshold,vol5_threshold,turnover_low,turnover_high,turnover_ratio_high,top_k,primary_candidate_size,after_primary_screen,after_risk_filters,risk_penalty_weight,rerank_signal,rerank_signal_weight,case_zip_score
+0.039122998538769285,0.0857404373091339,0.151773,4.289658999999992,0.40318148345272625,5,180,180,148,-0.3,close_position_20d,-0.05,0.02517949121691857

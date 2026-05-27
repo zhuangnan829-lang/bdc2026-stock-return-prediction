@@ -1,0 +1,6 @@
+﻿label,status,model,feature_set,sequence_length,rank_ic_mean,worst_fold_rank_ic,top5_return_mean,top5_return_min_by_fold,cost_after_return,sharpe,max_drawdown,avg_turnover,single_slice_score,negative_day_rank_ic_ratio,adopt_rule_pass,source_dir,notes
+v3_mini4_lstm_sl20,ok,lstm,base_alpha_v3_rs_crowding_mini4,20,0.027982087211024968,-0.0334922368530972,0.0075024903719323665,0.0032441391745382,1.085936213182149,3.977454961512014,-0.08706424521069267,0.9311367941484036,0.024595955824991064,0.4,False,D:\Desktop\股票分析预测代码\app\model\offline_v4_medium_compare\v3_mini4_lstm_sl20,same_protocol_evaluated
+v4_medium_lstm_sl20,ok,lstm,base_alpha_v4_medium,20,0.03536969813338197,0.0096683202969909,0.006251732000102934,0.0019055880637461,0.3209727665397333,1.9801952730054142,-0.13030960504095723,0.9207969309784877,0.025957924911566115,0.43333333333333335,False,D:\Desktop\股票分析预测代码\app\model\offline_v4_medium_compare\v4_medium_lstm_sl20,same_protocol_evaluated
+v4_medium_lstm_sl40,missing,lstm,base_alpha_v4_medium,40,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,False,,no_existing_artifact_found
+v4_medium_lstm_sl60,missing,lstm,base_alpha_v4_medium,60,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,False,,no_existing_artifact_found
+v4_medium_lightgbm,missing,lightgbm,base_alpha_v4_medium,,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,False,,no_existing_artifact_found

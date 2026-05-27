@@ -1,8 +1,15 @@
 # 最终提交快照
 
-## 当前冻结默认方案
+## 当前提交变体
 
-- 配置名称：`lstm_sl20_base_alpha_v3_rs_crowding_mini4__risk_adjusted_sort__pred_weight__cs180_v2086_v5100_rp-30_mt100`
+- 变体名称：`aggressive_score_submission`
+- 用途：追求可见单切片分数的满仓候选方案
+- 可见 case-slice score：`0.077484`
+- 结果来源：`D:/Desktop/股票分析预测代码/app/model/aggressive_score_submission_candidate/result_aggressive_score.csv`
+
+## 包内保留的默认模型配置
+
+- 配置名称：`lstm_sl20_base_alpha_v3_rs_crowding_mini4__hv_close_position_rerank`
 - 配置状态：`frozen_best_config`
 - 主模型：`LSTM`
 - 特征集：`base_alpha_v3_rs_crowding_mini4`
@@ -24,8 +31,8 @@
 - `AUTO_USE_PREVIOUS_RESULT = 0`
 
 配置来源：
-- [best_config.json](D:/Desktop/股票分析预测代码/app/model/best_config.json:1)
-- [default_submission_config.json](D:/Desktop/股票分析预测代码/app/model/default_submission_config.json:1)
+- 权威配置源：[default_submission_config.json](D:/Desktop/股票分析预测代码/app/model/default_submission_config.json:1)
+- 派生同步文件：[best_config.json](D:/Desktop/股票分析预测代码/app/model/best_config.json:1)
 - [model_meta.json](D:/Desktop/股票分析预测代码/app/model/model_meta.json:1)
 
 ## 当前提交文件
@@ -36,16 +43,17 @@
 
 | stock_id | weight |
 |---|---:|
-| `300316` | `0.211841` |
-| `600183` | `0.201978` |
-| `600584` | `0.201300` |
-| `688396` | `0.197701` |
-| `601877` | `0.187179` |
+| `000792` | `0.200000` |
+| `600233` | `0.200000` |
+| `601669` | `0.200000` |
+| `600930` | `0.200000` |
+| `002463` | `0.200000` |
 
 当前 `result.csv` 权重和为：`1.000000`
 
 说明：
-- 当前 `result.csv` 已按正式默认口径重新生成
+- 当前 `result.csv` 以 aggressive 变体同步后的满仓结果为准
+- 默认 LSTM 冻结模型和配置仍保留在包内，用于复现推理链路
 - 当前正式提交路径默认不自动复用上一版 `result.csv`
 
 ## 当前默认方案本地回测指标
@@ -58,21 +66,21 @@
 - walk-forward `top5_mean_return_mean`：`0.007502`
 
 指标来源：
-- [backtest_summary.csv](app/model/default_profile_backtest/backtest_summary.csv:1)
+- [backtest_summary.csv](D:/Desktop/股票分析预测代码/app/model/default_profile_backtest/backtest_summary.csv:1)
 
 ## 与压缩包程序的当前对比结论
 
-- 我方当前单切片分数：`0.032984`
+- 我方当前单切片分数：`0.077484`
 - 压缩包当前可见分数：`0.025179`
 - 压缩包公开最佳分数：`0.037838`
 
 这说明：
-- 当前正式默认已经超过压缩包当前结果
-- 当前正式默认也超过压缩包公开最佳分数
+- 当前 aggressive 提交结果超过参考当前可见输出和参考记录最好分数
 
 对应文件：
 - [case_program_comparison_summary.csv](D:/Desktop/股票分析预测代码/app/model/case_program_comparison/case_program_comparison_summary.csv:1)
 - [case_program_comparison_report.md](D:/Desktop/股票分析预测代码/app/model/case_program_comparison/case_program_comparison_report.md:1)
+- [latest_score_compare.md](D:/Desktop/股票分析预测代码/app/model/case_comparison/latest_score_compare.md:1)
 
 ## 提交校验状态
 

@@ -1,10 +1,11 @@
 {
-  "profile_name": "lstm_sl20_base_alpha_v3_rs_crowding_mini4__risk_adjusted_sort__pred_weight__cs180_v2086_v5100_rp-30_mt100",
+  "profile_name": "lstm_sl20_base_alpha_v3_rs_crowding_mini4__hv_close_position_rerank",
   "status": "frozen_best_config",
   "training": {
     "feature_set": "base_alpha_v3_rs_crowding_mini4",
     "target_mode": "cross_section_rank",
     "model_family": "lstm",
+    "seed": 2026,
     "valid_dates": 20,
     "num_folds": 3,
     "sequence_length": 20,
@@ -21,7 +22,8 @@
     "primary_candidate_size": 180,
     "enable_risk_filters": true,
     "sort_strategy": "risk_adjusted",
-    "weighting_scheme": "pred"
+    "weighting_scheme": "pred",
+    "max_single_weight": 0.18
   },
   "risk_filter_thresholds": {
     "max_volatility_20d_pct": 0.86,
@@ -36,10 +38,5 @@
     "max_turnover": 1.0,
     "transaction_cost": 0.001
   },
-  "ablation_conclusion": {
-    "feature_ablation_winner": "lstm_base_alpha_v3_rs_crowding_mini4",
-    "sort_strategy_winner": "risk_adjusted",
-    "weighting_winner": "pred",
-    "turnover_winner": "rp-60_mt100_zip_beating_default"
-  }
+  "ablation_conclusion": {}
 }

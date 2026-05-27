@@ -1,0 +1,7 @@
+﻿stock_id,current_weight,candidate_weight,weight_delta,abs_weight_delta,action
+600115,0.0,0.18,0.18,0.18,added
+601877,0.18,0.0,-0.18,0.18,dropped
+300316,0.18,0.18,0.0,0.0,kept
+600183,0.18,0.18,0.0,0.0,kept
+600584,0.18,0.18,0.0,0.0,kept
+688396,0.18,0.18,0.0,0.0,kept

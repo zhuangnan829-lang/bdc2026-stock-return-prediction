@@ -1,0 +1,943 @@
+Codex 分步执行提示词清单
+面向沪深 300 收益预测项目的收益率与稳定性提升方案
+文档用途：把本项目当前背景、问题诊断、优化优先级和可直接复制给 Codex 的逐步提示词整理成一份执行手册。建议逐条发送给 Codex，不要一次性全部执行。
+核心目标：在不盲目推翻 LSTM sl20 主线的前提下，通过诊断、组合层稳健化、标签目标对齐、特征增强、模型融合和最终选择器，提高程序收益率、稳定性与可复现可信度。
+一、项目背景与当前状态
+二、关键诊断结论
+1. 不建议直接推翻 LSTM sl20。当前 sl20 主线能跑通、有结果、有证据链，应作为 baseline 和默认候选继续保留。
+2. 当前程序最大的收益稳定性问题不是工程能否运行，而是单票贡献集中、换手率偏高、RankIC 跨折不稳、训练目标与 Top5 收益不完全一致。
+3. 优化顺序建议为：权重策略/组合层 > 标签/目标函数 > 特征集 > 模型融合 > 换模型。
+4. 当前单切片得分 0.032984 高于参考案例当前输出 0.025179，但低于参考案例最好记录 0.037838；不能宣称已超过参考最好分数。
+三、执行总原则
+每一步先让 Codex 阅读现有代码，再新增或修改，避免破坏主线。
+所有实验必须同协议比较：同一数据、同一 walk-forward、同一交易成本、同一回测、同一单切片评分。
+任何新方案必须同时汇报收益、RankIC、worst fold、Sharpe、最大回撤、换手率、单票集中度。
+如果新模型只在单切片更高，但稳定性更差，不能采用。
+最终保留 aggressive 和 robust 两套配置，而不是只赌一个万能配置。
+每条提示词执行完都要生成 CSV/MD 报告和运行命令，确认后再进入下一条。
+四、推荐执行顺序
+五、可直接复制给 Codex 的逐步提示词
+Prompt 0：建立优化总控与实验目录规范
+你现在接手一个沪深300收益预测项目。请先完整阅读仓库结构，重点查看 README.md、app/code/src、app/model、app/output、app/docs、app/run_research_pipeline.sh、app/run_submission.sh、app/freeze_submission.sh。
+当前主线是 LSTM sl20，特征集 base_alpha_v3_rs_crowding_mini4，训练目标 cross_section_rank，排序策略 risk_adjusted，权重策略 pred，Top5 选股，候选池 180，交易成本 0.001。不要推翻现有主线。
+请完成以下任务：
+1. 新增统一实验目录规范：
+app/model/experiments/
+2. 每次实验目录命名格式为：
+YYYYMMDD_HHMM_{model}_{feature_set}_sl{sequence_length}_{strategy}_{remark}
+3. 每个实验目录必须至少包含：
+config.json
+metrics.csv
+fold_results.csv
+backtest_summary.csv
+result.csv（如有）
+run.log
+report.md
+4. 新增脚本：
+app/code/src/experiment_utils.py
+要求 experiment_utils.py 提供：
+create_experiment_dir()
+save_config()
+save_metrics()
+save_report()
+load_latest_experiment()
+register_experiment_result()
+5. 新增总排行榜文件：
+app/model/experiment_leaderboard.csv
+字段至少包含：
+experiment_id
+model
+feature_set
+sequence_length
+rank_ic_mean
+worst_fold_rank_ic
+top5_return_mean
+cost_after_return
+sharpe
+max_drawdown
+avg_turnover
+single_slice_score
+max_single_contribution_ratio
+adopted
+notes
+6. 不要改动原有训练和提交主流程，只新增工具模块。
+完成后请运行最小可行检查，确认新增模块能 import，无语法错误。最后告诉我新增了哪些文件、怎么运行、下一步该做什么。
+Prompt 1：统一配置来源，消除脚本与快照口径不一致
+请检查当前项目中所有正式提交配置来源，包括：
+app/model/default_submission_config.json
+app/model/best_config.json
+app/model/model_meta.json
+app/run_submission.sh
+app/freeze_submission.sh
+app/test.sh
+app/test.ps1
+app/code/src/test_lstm.py
+以及 app/model/final_submission_snapshot.md 中记录的正式方案。
+目标：把 app/model/default_submission_config.json 设为唯一权威配置源，避免脚本、JSON、文档之间配置漂移。
+请完成：
+1. 新增或修改：
+app/code/src/load_submission_config.py
+功能：
+- 读取 app/model/default_submission_config.json
+- 校验必需字段是否存在：
+model_name
+feature_set
+sequence_length
+sort_strategy
+weight_strategy
+top_k
+candidate_size
+risk_penalty_weight
+max_turnover
+transaction_cost
+max_single_weight（如没有则允许为 null）
+- 返回统一 config dict
+2. 修改 run_submission.sh / test.sh / test.ps1：
+- 不要硬编码 sequence_length、candidate_size、risk_penalty、weight_strategy 等正式参数
+- 尽量通过 Python 配置加载逻辑读取 default_submission_config.json
+- 如果短期无法完全去除硬编码，请至少新增一致性检查
+3. 新增：
+app/code/src/compare_config_consistency.py
+功能：
+- 对比 default_submission_config.json、best_config.json、model_meta.json 和脚本入口中的关键参数
+- 输出 app/model/config_consistency_report.md
+- 若不一致，明确列出不一致字段并返回非零退出码
+4. 修改 freeze_submission.sh：
+- 在正式推理前强制运行 compare_config_consistency.py
+- 若配置不一致则停止冻结
+5. 修正 final_submission_snapshot.md 中任何错误结论，尤其不能写“当前方案超过参考案例最好分数”，只能写“超过参考当前可见输出，但尚未超过参考记录最好分数”。
+验收：
+运行：
+python app/code/src/compare_config_consistency.py
+bash app/run_submission.sh
+bash app/freeze_submission.sh
+要求：
+- 配置一致性报告生成
+- result.csv 能正常生成
+- freeze 能通过
+- 不改变原有正式输出逻辑，除非发现配置不一致并修复
+Prompt 2：建立收益瓶颈拆解脚本，先判断问题来自候选池、排序还是权重
+请新增一个收益瓶颈拆解脚本，不要改模型。
+新增文件：
+app/code/src/analyze_performance_bottleneck.py
+目标：
+对每个验证日期或测试切片，计算以下指标，用于判断收益瓶颈到底来自候选池、排序模型还是权重策略。
+需要支持输入参数：
+--pred_path 预测分数文件路径
+--data_path 含真实 future return 的数据文件
+--result_path 当前提交 result.csv，可选
+--top_k 默认 5
+--candidate_size 默认 180
+--output_dir 默认 app/model/performance_bottleneck/
+输出：
+1. performance_bottleneck_summary.csv
+字段包括：
+date
+true_top5_return
+candidate_pool_true_top5_return
+model_top5_equal_return
+model_top5_weighted_return
+model_top5_hit_rate
+model_top10_hit_rate
+worst_stock_return_in_model_top5
+best_missed_stock_return
+weight_strategy_gain
+max_single_weight
+max_single_contribution_ratio
+2. performance_bottleneck_report.md
+报告要回答：
+- 候选池是否漏掉真实高收益股票？
+- 模型排序是否把候选池中的高收益股票排到前面？
+- 当前权重策略是否优于等权？
+- 当前收益是否过度依赖单只股票？
+- 下一步更应该改候选池、排序模型还是权重？
+3. 如果输入 result.csv，则复算单切片贡献：
+stock_id
+weight
+true_return
+weighted_contribution
+contribution_ratio
+要求：
+- 兼容当前项目的数据列名。如果列名不确定，先自动检测或给出清晰错误提示。
+- 不要写死股票代码。
+- 若没有预测分数文件，请在 report 中说明缺失，不要静默失败。
+- 脚本最后打印一句明确判断：瓶颈更可能在 candidate_pool / ranking / weighting / concentration。
+完成后运行一次，并把生成路径告诉我。
+Prompt 3：新增单票权重上限搜索，降低单票贡献集中风险
+当前问题：单切片收益高度依赖个别股票。请不要重训模型，先在组合层做权重上限搜索。
+新增文件：
+app/code/src/search_weight_cap.py
+要求：
+1. 支持输入：
+--pred_path
+--data_path
+--base_config app/model/default_submission_config.json
+--caps 0.25 0.20 0.18 0.16 0.14
+--output_dir app/model/weight_cap_search/
+2. 对每个 max_single_weight cap 执行：
+- 按当前排序策略选 Top5
+- 原始 pred 权重
+- 对权重进行 cap
+- cap 后剩余权重按原比例重新分配
+- 保证权重非负、权重和不超过 1
+3. 输出：
+weight_cap_summary.csv
+字段：
+cap
+single_slice_score
+top5_equal_return
+top5_weighted_return
+max_single_weight
+max_single_contribution_ratio
+cost_after_return
+sharpe
+max_drawdown
+avg_turnover
+pass_basic_validation
+4. 输出：
+weight_cap_report.md
+说明：
+- 哪个 cap 收益损失最小
+- 哪个 cap 集中度下降最明显
+- 是否建议把 0.18 或 0.20 作为 robust 配置默认值
+5. 如果无法计算回测指标，也要至少计算单切片收益和集中度，并在报告说明原因。
+验收标准：
+- 0.18 或 0.20 cap 能明显降低最大单票贡献占比
+- 收益损失不能过大
+- result_validator 通过
+- 不改变原有默认配置，只生成候选配置建议
+最后请给出建议：aggressive 是否保留 pred，无 cap；robust 是否采用 cap=0.18 或 0.20。
+Prompt 4：新增 pred/equal 混合权重搜索
+请实现 pred/equal 混合权重实验，目标是在不明显降低收益的情况下提升稳定性并降低单票集中。
+新增文件：
+app/code/src/search_weight_blend.py
+混合公式：
+final_weight = alpha * pred_weight + (1 - alpha) * equal_weight
+测试 alpha：
+0.00, 0.25, 0.50, 0.75, 1.00
+其中：
+- 0.00 = 完全等权
+- 1.00 = 当前 pred 权重
+- 0.50 = 稳健折中
+要求支持同时叠加 max_single_weight：
+None, 0.20, 0.18
+输出目录：
+app/model/weight_blend_search/
+输出：
+1. weight_blend_summary.csv
+字段：
+alpha
+max_single_weight
+single_slice_score
+top5_equal_return
+top5_weighted_return
+cost_after_return
+sharpe
+max_drawdown
+avg_turnover
+max_single_contribution_ratio
+result_valid
+2. weight_blend_report.md
+报告中必须回答：
+- alpha=1.0 的 pred 权重是否真的优于等权？
+- alpha=0.5 是否在收益和稳定性之间更均衡？
+- 是否推荐 robust 配置使用 0.5*pred + 0.5*equal？
+- 是否应该与 max_single_weight=0.18 联用？
+要求：
+- 不要改默认提交配置
+- 只生成实验结果和推荐配置
+- 如果回测函数已有，复用现有 backtest.py
+- 如果回测较慢，先支持轻量单切片和 fold 级评估
+完成后输出运行命令和结果文件路径。
+Prompt 5：新增换手率与交易成本压力测试
+当前平均换手率偏高，交易成本敏感。请新增换手率和交易成本压力测试。
+新增文件：
+app/code/src/turnover_stress_test.py
+测试网格：
+max_turnover: 0.50, 0.65, 0.75, 0.85, 1.00
+transaction_cost: 0.001, 0.002, 0.003, 0.005
+weight_strategy:
+pred
+equal
+blend_0.5
+max_single_weight:
+None
+0.20
+0.18
+输出目录：
+app/model/turnover_stress_test/
+输出：
+turnover_stress_summary.csv
+字段：
+max_turnover
+transaction_cost
+weight_strategy
+max_single_weight
+cost_after_return
+sharpe
+max_drawdown
+avg_turnover
+total_cost
+win_rate
+top5_return_mean
+rank_ic_mean
+robust_score
+robust_score 建议：
+robust_score = normalized(cost_after_return) + normalized(sharpe) - drawdown_penalty - turnover_penalty
+输出：
+turnover_stress_report.md
+报告必须回答：
+1. 当前 max_turnover=1.00 是否过于激进？
+2. 交易成本升到 0.002 或 0.003 后，收益是否明显崩塌？
+3. 哪个配置适合作为 robust 稳健版？
+4. 哪个配置适合作为 aggressive 冲分版？
+5. 是否建议最终保留 aggressive/robust 双配置？
+要求：
+- 优先复用现有 backtest.py
+- 保证每个结果可复现
+- 对失败实验要记录错误，不要中断整个网格搜索
+最后生成：
+app/model/configs/submission_aggressive_candidate.json
+app/model/configs/submission_robust_candidate.json
+但不要覆盖 default_submission_config.json。
+Prompt 6：新增 RankIC 稳定性评估，不再只看均值
+请新增 RankIC 稳定性评估模块，目标是评估模型跨 Fold、跨日期是否稳定，而不是只看 rank_ic_mean。
+新增文件：
+app/code/src/evaluate_rank_stability.py
+输入：
+--fold_result_dir 或 --pred_path
+--output_dir app/model/stability_eval/
+输出：
+stability_summary.csv
+字段：
+model
+feature_set
+sequence_length
+rank_ic_mean
+rank_ic_std
+worst_fold_rank_ic
+best_fold_rank_ic
+negative_fold_count
+negative_day_rank_ic_ratio
+top5_return_mean
+top5_return_min_by_fold
+top5_return_std
+stability_score
+stability_score 建议：
+rank_ic_mean - 0.5 * rank_ic_std - penalty(negative_fold_count) + top5_return_mean
+输出：
+stability_report.md
+报告必须回答：
+1. Fold 1 和 Fold 3 是否是主要不稳定来源？
+2. 当前模型是否属于“收益正但 RankIC 不稳”？
+3. 后续实验采用与否，应该使用哪些硬性门槛？
+4. 推荐门槛：
+- top5_return_min_by_fold > 0
+- worst_fold_rank_ic 不低于当前主线
+- negative_day_rank_ic_ratio 下降
+要求：
+- 支持比较多个实验目录
+- 能把结果写入 app/model/experiment_leaderboard.csv
+- 不修改模型训练逻辑
+完成后运行一次当前主线评估。
+Prompt 7：建立 missed_winners 和 false_positives 错排样本库
+请建立错排样本诊断模块，用来分析模型为什么漏选赢家、误选输家。
+新增文件：
+app/code/src/diagnose_misranked_samples.py
+定义：
+missed_winners = 真实收益 TopK 但模型没有选入 TopK 的股票
+false_positives = 模型 TopK 但真实收益不佳的股票
+支持参数：
+--pred_path
+--feature_path
+--target_col target_return
+--top_k 5
+--true_top_k 5
+--output_dir app/model/misrank_diagnostics/
+输出：
+1. missed_winners.csv
+2. false_positives.csv
+3. misrank_feature_stats.csv
+4. misrank_report.md
+需要分析的特征，如果存在则使用：
+ret_1d
+ret_3d
+ret_5d
+intraday_return
+volume_ratio
+turnover_rate
+turnover_spike
+volatility_5d
+volatility_20d
+rel_hs300_ret_5d
+close_position_20d
+overheat_score
+reversal_risk_score
+报告必须回答：
+1. 漏选赢家有什么共同特征？
+2. 误选输家是否存在短期过热、放量、换手异常、高波动、长上影等特征？
+3. 是否应该加入反转保护特征？
+4. 是否应该调整 risk penalty 或 candidate filter？
+5. 哪些特征最值得在下一轮加入 base_alpha_v4_medium？
+要求：
+- 如果某些特征不存在，在报告中列出缺失特征，并建议新增
+- 输出按 Fold 分组的诊断
+- 不要修改原始数据
+Prompt 8：新增市场阶段划分与分阶段表现评估
+请新增市场阶段分析模块，用于解释不同 Fold 表现差异，并为后续 regime switching 做准备。
+新增文件：
+app/code/src/market_regime_split.py
+app/code/src/evaluate_by_market_regime.py
+阶段划分建议：
+1. 低波动 / 高波动：按市场或股票池 20 日波动率分位数划分
+2. 趋势 / 震荡：按指数或股票池平均收益方向一致性、20 日累计收益绝对值划分
+3. 高波动-震荡：高波动且趋势强度低
+4. 低波动-趋势：低波动且趋势强度高
+输出：
+app/model/market_regime_analysis/market_regime_summary.csv
+字段：
+regime
+sample_days
+rank_ic
+top5_return
+cost_after_return
+sharpe
+max_drawdown
+win_rate
+avg_turnover
+negative_rankic_ratio
+输出：
+app/model/market_regime_analysis/market_regime_report.md
+报告回答：
+1. 当前模型在哪个市场阶段最强？
+2. 哪个阶段最弱？
+3. 高波动震荡阶段是否是主要风险来源？
+4. 是否建议低波动/趋势使用 aggressive，高波动/震荡使用 robust？
+5. regime switching 的阈值应该如何简单设置，避免过拟合？
+要求：
+- 阈值必须简单、可解释
+- 不要用复杂模型预测 regime
+- 后续脚本能复用 regime 标签
+Prompt 9：新增反转保护和过热风险特征
+请在特征工程中新增一组“反转保护/过热风险”特征，目标是减少模型误选短期过热股票。
+请先阅读 app/code/src/featurework.py，理解当前特征生成逻辑，不要破坏现有 base_alpha_v3_rs_crowding_mini4。
+新增特征集名称：
+base_alpha_v4_medium
+在已有特征基础上新增以下特征，能实现多少实现多少，但要保证无未来信息泄漏：
+1. ret_2d, ret_7d, ret_15d, ret_20d
+2. volatility_5d, volatility_10d, volatility_20d
+3. volume_ratio_5d, volume_ratio_10d, amount_ratio_10d
+4. close_position_10d, close_position_20d
+5. ret_1d_zscore_cross_section
+6. ret_3d_zscore_cross_section
+7. volume_spike_zscore
+8. turnover_spike_zscore
+9. overheat_score：短期涨幅、放量、换手异常的综合分
+10. reversal_risk_score：过热 + 高波动 + 高换手的综合风险分
+11. relative_to_market_5d, relative_to_market_10d
+要求：
+- 所有 rolling 特征只能使用当前日及以前数据
+- 不允许 future_open_1/future_open_5/target_return 泄漏到特征
+- 对缺失值和极端值做安全处理
+- 保留原特征集，不要覆盖
+新增或修改：
+app/code/src/featurework.py
+app/code/src/test_feature_set_presets.py
+输出：
+app/model/feature_set_reports/base_alpha_v4_medium_features.md
+列出新增特征、定义、窗口、是否可能泄漏、缺失值处理方式。
+验收：
+运行小样本 featurework，确认 base_alpha_v4_medium 可生成。
+Prompt 10：对 base_alpha_v4_medium 做同协议特征集对比
+请新增特征集对比实验脚本，不要只看训练效果，必须同协议比较。
+新增文件：
+app/code/src/compare_feature_sets.py
+比较对象：
+1. base_alpha_v3_rs_crowding_mini4 + LSTM sl20
+2. base_alpha_v4_medium + LSTM sl20
+3. base_alpha_v4_medium + LSTM sl40（如果已有）
+4. base_alpha_v4_medium + LSTM sl60（如果已有）
+5. base_alpha_v4_medium + LightGBM（如果已有）
+指标：
+rank_ic_mean
+worst_fold_rank_ic
+top5_return_mean
+top5_return_min_by_fold
+cost_after_return
+sharpe
+max_drawdown
+avg_turnover
+single_slice_score
+negative_day_rank_ic_ratio
+输出：
+app/model/feature_set_comparison/feature_set_summary.csv
+app/model/feature_set_comparison/feature_set_report.md
+报告必须回答：
+1. v4_medium 是否真的提升 Top5 收益？
+2. 是否只提升单切片但降低 Walk-forward 稳定性？
+3. 是否存在明显过拟合？
+4. 哪些新增特征可能有效？
+5. 是否建议 v4_medium 进入下一轮主线或只作为候选？
+采用规则：
+只有当 v4_medium 在 top5_return_mean、worst_fold_rank_ic 或 sharpe 至少两项不差，且没有明显增加回撤/换手时，才建议保留。
+Prompt 11：实现 Top-K 加权 Rank 训练目标
+当前训练目标 cross_section_rank 可能与最终 Top5 收益不完全一致。请新增 Top-K 加权 Rank 训练目标，不要删除原训练目标。
+新增文件：
+app/code/src/train_lstm_topk.py
+或在 train_lstm.py 中新增可选参数：
+--objective cross_section_rank / topk_weighted_rank
+Top-K 加权逻辑：
+对每个交易日横截面样本：
+- 根据真实 target_return 排名
+- 真实 TopK 或 TopN 样本给予更高权重
+- sample_weight = 1 + gamma * indicator(real_rank <= topn)
+测试参数：
+topn = 10, 20, 30
+gamma = 1, 2, 3, 5
+输出目录：
+app/model/topk_objective_search/
+每个实验输出：
+config.json
+fold_results.csv
+metrics.csv
+backtest_summary.csv
+result.csv
+report.md
+评价指标：
+NDCG@5
+HitRate@5
+Top5平均收益
+rank_ic_mean
+worst_fold_rank_ic
+cost_after_return
+Sharpe
+max_drawdown
+avg_turnover
+报告：
+topk_objective_report.md
+必须回答：
+1. Top-K 加权是否提升 Fold 1 和 Fold 3？
+2. 是否只提升 HitRate/NDCG 但没有提升收益？
+3. 哪个 gamma/topn 最稳？
+4. 是否建议替代 cross_section_rank，还是只作为融合候选？
+采用规则：
+如果 Top5收益提升但 worst_fold_rank_ic 明显变差，不采用。
+如果单切片提升但 Walk-forward 变差，不采用。
+Prompt 12：实现 residual_return 与 risk_adjusted_return 标签实验
+请新增标签改造实验，测试 residual_return 和 risk_adjusted_return 是否比原始 target_return 更适合横截面 Top5 任务。
+新增或修改：
+app/code/src/featurework.py
+app/code/src/train_lstm_label_variants.py
+标签定义：
+1. original_return:
+target_return = (future_open_5 - future_open_1) / future_open_1
+2. residual_return:
+residual_return = stock_future_return - market_average_future_return
+market_average_future_return 可以用当日股票池平均 future return 近似
+3. risk_adjusted_return:
+risk_adjusted_return = stock_future_return / (volatility_20d + eps)
+4. clipped_return:
+对 target_return 做横截面 winsorize，降低极端值影响
+实验组合：
+label_type = original_return, residual_return, risk_adjusted_return, clipped_return
+objective = cross_section_rank, topk_weighted_rank
+输出：
+app/model/label_variant_search/label_variant_summary.csv
+app/model/label_variant_search/label_variant_report.md
+指标：
+rank_ic_mean
+worst_fold_rank_ic
+top5_return_mean
+top5_return_min_by_fold
+NDCG@5
+HitRate@5
+cost_after_return
+Sharpe
+max_drawdown
+avg_turnover
+single_slice_score
+采用规则：
+只有当 residual/risk_adjusted 标签提升稳定性或 Top5 收益，并且不显著降低单切片得分时，才推荐进入主线。
+Prompt 13：实现 LSTM 多随机种子 Bagging
+请实现 LSTM 多随机种子 bagging，不改变单模型主线。
+新增文件：
+app/code/src/train_lstm_multiseed.py
+app/code/src/predict_lstm_multiseed.py
+测试 seed：
+2024, 2025, 2026
+如果速度允许，再扩展到 2027, 2028。
+要求：
+1. 每个 seed 独立训练并保存预测分数
+2. 最终融合采用 average_rank，不直接平均原始预测值
+3. 输出每个 seed 的 fold 结果
+4. 输出 bagging 后的 fold 结果和回测结果
+输出目录：
+app/model/lstm_multiseed_bagging/
+输出：
+seed_results.csv
+bagging_summary.csv
+bagging_report.md
+指标：
+rank_ic_mean
+rank_ic_std
+worst_fold_rank_ic
+top5_return_mean
+cost_after_return
+Sharpe
+max_drawdown
+avg_turnover
+single_slice_score
+报告必须回答：
+1. 单个 seed 差异大不大？
+2. average_rank bagging 是否提升 worst fold？
+3. 是否降低 negative_day_rank_ic_ratio？
+4. 是否值得作为正式候选或融合候选？
+采用规则：
+只有当 bagging 提升稳定性，且推理成本可接受，才进入候选。
+Prompt 14：实现训练快照平均 Snapshot Ensemble
+请实现 LSTM 快照平均，减少单个 epoch 偶然性。
+新增或修改：
+app/code/src/train_lstm.py
+app/code/src/predict_lstm_snapshot_ensemble.py
+要求：
+1. 训练过程中保存验证表现最好的 top 3 checkpoints
+2. 推理时对 top 3 checkpoints 的预测分数做 average_rank 融合
+3. 不直接平均原始预测值
+4. 输出单 checkpoint 与 snapshot ensemble 的对比
+输出目录：
+app/model/lstm_snapshot_ensemble/
+输出：
+checkpoint_metrics.csv
+snapshot_ensemble_summary.csv
+snapshot_ensemble_report.md
+指标：
+rank_ic_mean
+worst_fold_rank_ic
+top5_return_mean
+cost_after_return
+Sharpe
+max_drawdown
+avg_turnover
+single_slice_score
+报告回答：
+1. 最后一个 epoch 是否不如最佳 checkpoint？
+2. top3 snapshot 是否提高稳定性？
+3. 是否建议替代单 checkpoint 推理？
+采用规则：
+如果 snapshot 提升稳定性且不显著降低收益，推荐进入 robust 配置候选。
+Prompt 15：实现 LightGBM / Momentum / LSTM 的 Rank Blend
+请实现 rank blend 融合，不要直接融合原始预测值。
+新增文件：
+app/code/src/rank_blend.py
+融合对象：
+1. LSTM sl20 score
+2. LightGBM score（如果已有）
+3. XGBoost score（如果已有）
+4. Momentum score
+5. Reversal adjusted score（如果已有）
+若某些模型分数不存在，请脚本自动跳过并在报告中说明。
+测试融合权重：
+A: LSTM 0.7 + LightGBM 0.3
+B: LSTM 0.6 + LightGBM 0.2 + Momentum 0.2
+C: LSTM 0.5 + LightGBM 0.3 + Reversal 0.2
+D: LSTM 0.5 + LightGBM 0.25 + XGBoost 0.25
+E: LSTM 0.6 + Momentum 0.4
+融合方式：
+对每个交易日横截面，先把每个模型分数转成 rank percentile，再加权求和。
+输出：
+app/model/rank_blend/blend_summary.csv
+app/model/rank_blend/blend_report.md
+指标：
+rank_ic_mean
+worst_fold_rank_ic
+top5_return_mean
+top5_return_min_by_fold
+NDCG@5
+HitRate@5
+cost_after_return
+Sharpe
+max_drawdown
+avg_turnover
+single_slice_score
+max_single_contribution_ratio
+报告必须回答：
+1. 融合是否提高 worst fold？
+2. 融合是否降低单票集中度？
+3. 融合是否提高收益或 Sharpe？
+4. 是否建议替代 LSTM 单模型？
+5. 如果不替代，是否适合作为 robust 配置？
+采用规则：
+融合必须在稳定性和收益至少一方面明显改善，且不能使换手率和回撤显著变差。
+Prompt 16：实现 sl40/sl60 LSTM 长序列分支，但只作为候选
+请实现 LSTM sl40 和 sl60 长序列分支实验，用来评估是否借鉴参考案例长序列思想，但不要替换默认 sl20。
+新增或修改：
+app/code/src/train_lstm.py
+app/code/src/run_sequence_length_search.py
+测试：
+sequence_length = 20, 40, 60
+固定其他关键参数尽量一致：
+feature_set = base_alpha_v3_rs_crowding_mini4 和 base_alpha_v4_medium
+objective = 当前主线 objective
+sort_strategy = risk_adjusted
+transaction_cost = 0.001
+输出：
+app/model/sequence_length_search/sl20_sl40_sl60_summary.csv
+app/model/sequence_length_search/sl20_sl40_sl60_report.md
+指标：
+rank_ic_mean
+worst_fold_rank_ic
+top5_return_mean
+top5_return_min_by_fold
+cost_after_return
+Sharpe
+max_drawdown
+avg_turnover
+single_slice_score
+training_time
+报告必须回答：
+1. sl40/sl60 是否真的提升稳定性？
+2. 是否牺牲了单切片得分？
+3. 是否存在训练时间过长或样本减少问题？
+4. 是否建议 sl60 进入融合候选，而不是替换 sl20？
+采用规则：
+只有当 sl60 在 worst_fold_rank_ic 或 Sharpe 上明显更好，且单切片不过度下降，才保留。
+Prompt 17：实现 Transformer-lite 分支，但禁止直接替换主线
+请实现一个轻量 Transformer-lite 分支，用作和 LSTM sl20 的候选对比，不要直接替换主线。
+新增文件：
+app/code/src/transformer_lite_utils.py
+app/code/src/train_transformer_lite.py
+app/code/src/predict_transformer_lite.py
+模型要求：
+- sequence_length 支持 20, 40, 60
+- Transformer encoder 层数 1-2 层
+- hidden size 控制在较小规模
+- 支持当前特征输入
+- 输出横截面排序分数
+- 支持和现有 walk-forward 协议对齐
+输出目录：
+app/model/transformer_lite/
+输出：
+transformer_lite_summary.csv
+transformer_lite_report.md
+对比对象：
+LSTM sl20 当前主线
+指标：
+rank_ic_mean
+worst_fold_rank_ic
+top5_return_mean
+NDCG@5
+HitRate@5
+cost_after_return
+Sharpe
+max_drawdown
+avg_turnover
+single_slice_score
+training_time
+inference_time
+报告必须明确：
+1. Transformer-lite 是否超过 LSTM sl20？
+2. 是否只是单次得分高但稳定性差？
+3. 是否适合进入 rank blend？
+4. 是否不建议替换主线？
+采用规则：
+只有同时超过 sl20 的单切片得分、Sharpe、worst_fold_rank_ic，且回撤/换手不更差，才允许建议替换主线。否则只能作为融合候选。
+Prompt 18：实现简单 Regime Switching 策略
+请实现简单的市场阶段切换策略，不使用复杂模型预测 regime，避免过拟合。
+依赖已有：
+market_regime_split.py
+evaluate_by_market_regime.py
+submission_aggressive_candidate.json
+submission_robust_candidate.json
+新增文件：
+app/code/src/regime_switch_submission.py
+逻辑：
+1. 根据最近窗口市场状态判断 regime
+2. 如果高波动且震荡：
+使用 robust 配置
+3. 否则：
+使用 aggressive 配置
+regime 判断建议：
+- volatility_20d 高于训练期 70% 分位 = 高波动
+- abs(market_return_20d) 低于一定阈值 = 震荡
+- 其他为正常/趋势
+输出：
+app/model/regime_switch/regime_switch_summary.csv
+app/model/regime_switch/regime_switch_report.md
+指标：
+single_slice_score
+cost_after_return
+Sharpe
+max_drawdown
+avg_turnover
+rank_ic_mean
+worst_fold_rank_ic
+报告必须回答：
+1. Regime switching 是否提升稳定性？
+2. 是否降低高波动震荡阶段回撤？
+3. 是否牺牲过多收益？
+4. 阈值是否简单可解释？
+5. 是否建议用于最终提交，还是只写入研究结论？
+采用规则：
+如果 regime switching 只提升单次得分但降低 walk-forward 稳定性，不采用。
+Prompt 19：建立 aggressive / robust 双配置和最终选择器
+请建立 aggressive 和 robust 两套候选配置，并新增最终选择器，不要直接覆盖默认配置。
+新增文件：
+app/model/configs/submission_aggressive.json
+app/model/configs/submission_robust.json
+app/code/src/select_final_submission_config.py
+aggressive 配置目标：
+- 追求单切片得分和累计收益
+- 可以保留较高换手
+- 可使用 pred 权重
+- 可使用较宽候选池
+robust 配置目标：
+- 降低回撤、换手和单票集中
+- 使用 max_single_weight 0.18 或 0.20
+- 使用 blend_0.5 权重或低换手
+- 适合高波动震荡阶段
+select_final_submission_config.py 要读取：
+experiment_leaderboard.csv
+turnover_stress_summary.csv
+weight_cap_summary.csv
+weight_blend_summary.csv
+stability_summary.csv
+输出：
+app/model/configs/final_config_selection_report.md
+报告必须说明：
+1. aggressive 配置是谁，为什么
+2. robust 配置是谁，为什么
+3. 最终默认建议用哪个
+4. 如果目标是比赛冲分，选哪个
+5. 如果目标是稳定策略，选哪个
+6. 采用/放弃每个配置的证据
+要求：
+- 不自动覆盖 default_submission_config.json
+- 只生成建议
+- 最后提示用户手动确认是否同步默认配置
+Prompt 20：建立最终实验排行榜和采用/放弃规则
+请完善实验排行榜，避免凭感觉选模型。
+新增或修改：
+app/code/src/build_experiment_leaderboard.py
+扫描以下目录：
+app/model/experiments/
+app/model/weight_cap_search/
+app/model/weight_blend_search/
+app/model/turnover_stress_test/
+app/model/topk_objective_search/
+app/model/label_variant_search/
+app/model/rank_blend/
+app/model/sequence_length_search/
+app/model/transformer_lite/
+汇总输出：
+app/model/experiment_leaderboard.csv
+app/model/experiment_leaderboard_report.md
+综合评分：
+stable_alpha_score =
+0.25 * normalized(top5_return_mean)
++ 0.20 * normalized(cost_after_return)
++ 0.20 * normalized(sharpe)
++ 0.15 * normalized(rank_ic_mean)
++ 0.10 * normalized(worst_fold_rank_ic)
+- 0.05 * drawdown_penalty
+- 0.05 * turnover_penalty
+硬性淘汰规则：
+1. top5_return_min_by_fold <= 0 且没有合理解释，淘汰
+2. worst_fold_rank_ic 明显低于当前 sl20，谨慎
+3. max_drawdown 明显恶化，淘汰
+4. avg_turnover 明显升高且收益没有补偿，淘汰
+5. single_slice_score 高但 walk-forward 变差，标记为疑似过拟合
+6. result_validator 不通过，淘汰
+报告必须输出：
+- Top 10 aggressive 候选
+- Top 10 robust 候选
+- 推荐最终候选
+- 不推荐的高风险候选及原因
+Prompt 21：最后执行完整验证流水线
+请新增一个完整验证流水线脚本，把前面所有关键评估串起来。
+新增文件：
+app/code/src/run_full_optimization_validation.py
+或 shell 入口：
+app/run_full_optimization_validation.sh
+执行顺序：
+1. compare_config_consistency.py
+2. analyze_performance_bottleneck.py
+3. search_weight_cap.py
+4. search_weight_blend.py
+5. turnover_stress_test.py
+6. evaluate_rank_stability.py
+7. diagnose_misranked_samples.py
+8. evaluate_by_market_regime.py
+9. rank_blend.py
+10. build_experiment_leaderboard.py
+11. select_final_submission_config.py
+12. result_validator.py
+13. pre_submit_check.py
+输出总报告：
+app/model/full_optimization_validation_report.md
+报告结构：
+1. 当前主线表现
+2. 收益瓶颈判断
+3. 组合层优化结果
+4. 稳定性优化结果
+5. 标签/特征/融合实验结果
+6. aggressive 候选
+7. robust 候选
+8. 是否建议替换 LSTM sl20
+9. 最终推荐
+10. 仍然存在的风险
+最终判断规则：
+- 如果没有任何方案在 walk-forward、回测、单切片三方面同时优于 sl20，则保留 sl20 主线
+- 如果 rank blend 或 robust 配置显著改善 worst fold、回撤、换手，同时收益不大幅下降，则推荐进入候选
+- 只有新模型全面胜出，才建议替换主线
+请确保脚本遇到某一步失败时记录错误，但尽量继续执行后续可执行步骤，最后报告中列出失败步骤。
+六、最终采用/放弃规则
+七、给 Codex 的总提示原则
+不要为了追求单次最高分而破坏 walk-forward 稳定性。
+不要直接推翻 LSTM sl20 主线。
+所有实验必须同协议比较：同一数据、同一 walk-forward、同一交易成本、同一回测、同一单切片评分。
+任何新方案必须同时汇报收益、RankIC、worst fold、Sharpe、最大回撤、换手率、单票集中度。
+如果新模型只在单切片更高，但稳定性更差，不能采用。
+最终保留 aggressive 和 robust 两套配置。
+项目要素 | 当前信息
+项目名称 | 面向沪深 300 成分股的金融时间序列收益预测与组合推荐研究
+任务目标 | 基于沪深 300 成分股历史行情预测未来一周收益，生成 Top-K 股票组合推荐，并输出 result.csv。
+交易/标签口径 | T+1 开盘买入，T+5 开盘卖出；target_return = (future_open_5 - future_open_1) / future_open_1。
+核心评价指标 | RankIC、Top5 平均收益、成本后累计收益、Sharpe、最大回撤、换手率、单切片得分。
+当前主线 | LSTM sl20，特征集 base_alpha_v3_rs_crowding_mini4，训练目标 cross_section_rank，risk_adjusted 排序，pred 权重，Top5。
+工程入口 | run_research_pipeline.sh、run_submission.sh、freeze_submission.sh，Docker 可复现。
+当前诉求 | 工程可靠性已增强，但收益率和稳定性提升不明显，需要从标签、特征、组合、融合和稳定性诊断继续优化。
+问题 | 表现 | 优先方向
+单票贡献集中 | 601877 单票贡献占总收益大部分 | 权重上限、pred/equal 混合、贡献集中度诊断
+换手率偏高 | 平均换手约 0.9567，总交易成本较高 | 低换手、成本压力测试、持仓惯性
+RankIC 不稳定 | Fold 1 为负，Fold 3 接近 0 | 稳定性评估、错排样本诊断、市场阶段分析
+Top5 目标错位 | 整体 rank 不等于 Top5 收益最优 | Top-K 加权 rank、残差收益、风险调整收益标签
+尚未超过参考最好分数 | 当前 0.032984 < 0.037838 | 中等特征集、bagging、snapshot、rank blend、sl60/Transformer-lite 候选
+序号 | 执行任务 | 检查要求
+0 | 建立优化总控与实验目录规范 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+1 | 统一配置来源，消除脚本与快照口径不一致 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+2 | 建立收益瓶颈拆解脚本，先判断问题来自候选池、排序还是权重 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+3 | 新增单票权重上限搜索，降低单票贡献集中风险 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+4 | 新增 pred/equal 混合权重搜索 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+5 | 新增换手率与交易成本压力测试 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+6 | 新增 RankIC 稳定性评估，不再只看均值 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+7 | 建立 missed_winners 和 false_positives 错排样本库 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+8 | 新增市场阶段划分与分阶段表现评估 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+9 | 新增反转保护和过热风险特征 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+10 | 对 base_alpha_v4_medium 做同协议特征集对比 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+11 | 实现 Top-K 加权 Rank 训练目标 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+12 | 实现 residual_return 与 risk_adjusted_return 标签实验 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+13 | 实现 LSTM 多随机种子 Bagging | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+14 | 实现训练快照平均 Snapshot Ensemble | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+15 | 实现 LightGBM / Momentum / LSTM 的 Rank Blend | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+16 | 实现 sl40/sl60 LSTM 长序列分支，但只作为候选 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+17 | 实现 Transformer-lite 分支，但禁止直接替换主线 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+18 | 实现简单 Regime Switching 策略 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+19 | 建立 aggressive / robust 双配置和最终选择器 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+20 | 建立最终实验排行榜和采用/放弃规则 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+21 | 最后执行完整验证流水线 | 完成后确认输出文件、运行命令和验收标准，再执行下一步
+判断场景 | 处理规则
+没有任何方案在 walk-forward、回测、单切片三方面同时优于 sl20 | 保留 LSTM sl20 主线，不替换。
+rank blend 或 robust 配置显著改善 worst fold、回撤、换手，收益不大幅下降 | 纳入候选配置，优先作为 robust 方案。
+新模型单切片更高，但 RankIC、回撤、换手或 worst fold 变差 | 标记为疑似过拟合，不采用。
+Transformer-lite、sl60 或其他新模型全面超过 sl20 | 才允许考虑替换主线。
+aggressive 和 robust 结论冲突 | 同时保留双配置，并在最终提交前根据比赛目标选择。

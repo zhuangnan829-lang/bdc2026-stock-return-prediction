@@ -1,6 +1,6 @@
 {
   "status": "submission_artifacts_ready",
-  "profile_name": "lstm_sl20_base_alpha_v3_rs_crowding_mini4__risk_adjusted_sort__pred_weight__cs180_v2086_v5100_rp-30_mt100",
+  "profile_name": "lstm_sl20_base_alpha_v3_rs_crowding_mini4__hv_close_position_rerank",
   "model_family": "lstm",
   "feature_set": "base_alpha_v3_rs_crowding_mini4",
   "model_path": "submission_artifacts/lstm_model.pt",

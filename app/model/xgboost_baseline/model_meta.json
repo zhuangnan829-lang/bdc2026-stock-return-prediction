@@ -1,16 +1,16 @@
 {
   "status": "trained",
-  "best_profile_name": "base_technical_risk__risk_adjusted_sort__pred_weight__balanced_mt70",
+  "best_profile_name": "lstm_sl20_base_alpha_v3_rs_crowding_mini4__risk_adjusted_sort__pred_weight__cs180_v2086_v5100_rp-30_mt100",
   "default_submission_profile": {
-    "profile_name": "base_technical_risk__risk_adjusted_sort__pred_weight__balanced_mt70",
-    "feature_set": "base_technical_risk",
+    "profile_name": "lstm_sl20_base_alpha_v3_rs_crowding_mini4__risk_adjusted_sort__pred_weight__cs180_v2086_v5100_rp-30_mt100",
+    "feature_set": "base_alpha_v3_rs_crowding_mini4",
     "target_mode": "cross_section_rank",
-    "model_family": "lightgbm",
+    "model_family": "lstm",
     "sort_strategy": "risk_adjusted",
     "weighting_scheme": "pred",
     "top_k": 5,
-    "primary_candidate_size": 55,
-    "max_turnover": 0.7,
+    "primary_candidate_size": 180,
+    "max_turnover": 1.0,
     "transaction_cost": 0.001
   },
   "backend": "xgboost",
@@ -34,37 +34,12 @@
     "volume_ratio_10d",
     "amount_change_1d",
     "amount_ratio_5d",
-    "close_to_ma_5d",
-    "close_to_ma_10d",
-    "close_to_ma_20d",
-    "turnover_mean_5d",
-    "turnover_mean_10d",
-    "turnover_mean_20d",
-    "turnover_change_1d",
-    "turnover_ratio_5d",
-    "turnover_ratio_10d",
-    "amplitude_mean_5d",
-    "amplitude_mean_10d",
-    "amplitude_ratio_5d",
-    "amplitude_change_1d",
-    "rank_ret_1d",
-    "rank_ret_5d",
-    "rank_mom_5d",
-    "rank_close_to_ma_10d",
-    "rank_turnover_rate",
-    "rank_volume_change_1d",
-    "rank_amount_ratio_5d",
-    "volatility_5d",
-    "volatility_10d",
-    "volatility_20d",
-    "volatility_ratio_5_10",
-    "volatility_ratio_10_20",
-    "risk_adjusted_mom_5d",
-    "risk_adjusted_mom_10d",
-    "rank_volatility_5d",
-    "rank_volatility_20d"
+    "rel_hs300_mean_ret_5d",
+    "rel_cs_mean_close_to_ma_10d",
+    "turnover_spike_5d",
+    "volume_price_divergence_5d"
   ],
-  "feature_set": "base_technical_risk",
+  "feature_set": "base_alpha_v3_rs_crowding_mini4",
   "requested_model_family": "xgboost",
   "raw_label_column": "target_return",
   "model_label_column": "train_target",
@@ -78,21 +53,21 @@
     "2026-02-27"
   ],
   "walk_forward_summary": {
-    "rmse_mean": 0.4987902960109978,
-    "mae_mean": 0.495697101110586,
-    "rank_ic_mean": -0.02416423224851337,
-    "top5_mean_return_mean": -0.005002248968016885,
-    "rmse_std": 0.0046719218721412836,
-    "mae_std": 0.004866032768543028,
-    "rank_ic_std": 0.026563846296872477,
-    "top5_mean_return_std": 0.003350690671741141
+    "rmse_mean": 0.5003792550445285,
+    "mae_mean": 0.497547442146755,
+    "rank_ic_mean": -0.030145156268928563,
+    "top5_mean_return_mean": 0.00034058754732758934,
+    "rmse_std": 0.0036481959535966473,
+    "mae_std": 0.0038800962580013173,
+    "rank_ic_std": 0.022224183782753714,
+    "top5_mean_return_std": 0.010332978412061471
   },
   "walk_forward_folds": [
     {
-      "rmse": 0.49839471680772546,
-      "mae": 0.4962062367137784,
-      "rank_ic": -0.05837405003547378,
-      "top5_mean_return": -0.009303507961362716,
+      "rmse": 0.5010229143769525,
+      "mae": 0.4992264558013791,
+      "rank_ic": -0.059232866208676925,
+      "top5_mean_return": 0.0005123759385728101,
       "fold_id": 1,
       "train_rows": 137090,
       "valid_rows": 6000,
@@ -102,10 +77,10 @@
       "valid_date_end": "2025-12-23"
     },
     {
-      "rmse": 0.49327643797035575,
-      "mae": 0.4894992178992229,
-      "rank_ic": -0.02050265517281643,
-      "top5_mean_return": -0.0011296815309231037,
+      "rmse": 0.4956242236491375,
+      "mae": 0.492183733144725,
+      "rank_ic": -0.005291094460187472,
+      "top5_mean_return": 0.012909081162170866,
       "fold_id": 2,
       "train_rows": 143090,
       "valid_rows": 6000,
@@ -115,10 +90,10 @@
       "valid_date_end": "2026-01-22"
     },
     {
-      "rmse": 0.5046997332549121,
-      "mae": 0.5013858487187568,
-      "rank_ic": 0.006384008462750096,
-      "top5_mean_return": -0.004573557411764838,
+      "rmse": 0.5044906271074956,
+      "mae": 0.5012321374941611,
+      "rank_ic": -0.025911508137921285,
+      "top5_mean_return": -0.012399694458760909,
       "fold_id": 3,
       "train_rows": 149090,
       "valid_rows": 6000,
@@ -127,5 +102,11 @@
       "valid_date_start": "2026-01-23",
       "valid_date_end": "2026-02-27"
     }
-  ]
+  ],
+  "walk_forward_fold_prediction_files": [
+    "fold_1_predictions.csv",
+    "fold_2_predictions.csv",
+    "fold_3_predictions.csv"
+  ],
+  "walk_forward_diagnostics_profile": "walk_forward_default"
 }
