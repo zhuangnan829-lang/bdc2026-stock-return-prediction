@@ -43,6 +43,7 @@
 - [x] `app/docs/environment_snapshot.md`
 - [x] `app/docs/experiment_result_index.md`
 - [x] `app/docs/report_figure_table_index.md`
+- [x] `app/docs/unimplemented_model_applicability.md`
 - [x] `app/docs/final_delivery_checklist.md`
 - [ ] 中期/答辩相关文档已全部完成最终统一复核
 
@@ -86,6 +87,7 @@
 ## 9. PPT / 答辩材料交付
 
 - [ ] PPT 中的模型清单已与 `opening_report_alignment.md` 逐页对齐
+- [x] 开题承诺但未落地的 `ARIMA / TFT / N-HiTS / TSFM / Qlib / FinRL` 已整理为调研与适用性说明
 - [ ] PPT 中的正式默认方案已与 `final_submission_snapshot.md` 逐页对齐
 - [ ] PPT 中图表引用路径已逐页核对
 - [ ] Demo 展示顺序已与 `app/docs/demo_3min_main_flow.md` 完全一致
